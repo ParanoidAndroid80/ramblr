@@ -1,6 +1,7 @@
 package com.trevornk.ramblr
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -186,6 +187,124 @@ class CleanupWaterfallExecutorTest {
             callback = { captured = it },
         )
         return captured ?: error("callback never fired")
+    }
+
+    @Test fun `explicit temperature rejection retries once without temperature and preserves configured value initially`() {
+        val bodies = mutableListOf<String>()
+        var callbackCount = 0
+        var final: PostProcessor.Result? = null
+        val transport = CleanupHttpTransport { _, _, jsonBody, _, _, callback ->
+            bodies += jsonBody
+            if (bodies.size == 1) {
+                callback(CleanupHttpOutcome.HttpError(400,
+                    """{"error":{"type":"unsupported_value","code":"unsupported_value","param":"temperature","message":"temperature is unsupported"}}"""))
+            } else {
+                callback(CleanupHttpOutcome.Ok("""{"choices":[{"message":{"content":"cleaned"}}]}"""))
+            }
+        }
+        CleanupWaterfallExecutor.execute(
+            text = "synthetic-independent transcript", prompt = "cleanup",
+            waterfall = CleanupWaterfall(listOf(CleanupStep(CleanupStepGroup.OPENAI_DIRECT, "model"))),
+            cursor = CleanupWaterfallCursor(), cancelHolder = InFlightCall(),
+            credentialLookup = { "auth" }, transport = transport,
+            localInference = LocalInferenceEngine { _, _, _, _, _ -> error("unexpected local step") },
+            callback = { callbackCount++; final = it },
+        )
+        assertEquals(2, bodies.size)
+        assertTrue(org.json.JSONObject(bodies[0]).has("temperature"))
+        assertFalse(org.json.JSONObject(bodies[1]).has("temperature"))
+        assertEquals(1, callbackCount)
+        assertEquals("cleaned", final?.text)
+    }
+
+    @Test fun `known rejecting model family is sent without temperature without a rejection round trip`() {
+        var requestCount = 0
+        var firstBody = ""
+        val transport = CleanupHttpTransport { _, _, jsonBody, _, _, callback ->
+            requestCount++
+            firstBody = jsonBody
+            callback(CleanupHttpOutcome.Ok("""{"choices":[{"message":{"content":"cleaned"}}]}"""))
+        }
+        execute(
+            waterfall = CleanupWaterfall(listOf(CleanupStep(CleanupStepGroup.OPENAI_DIRECT, "o3-mini"))),
+            transport = transport,
+        )
+        assertEquals(1, requestCount)
+        assertFalse(org.json.JSONObject(firstBody).has("temperature"))
+    }
+
+    @Test fun `expired temperature retry deadline does not send another request`() {
+        var now = 100L
+        var requests = 0
+        var callbacks = 0
+        val transport = CleanupHttpTransport { _, _, _, _, _, callback ->
+            requests++
+            now = 100L + CLEANUP_WATERFALL_HARD_CAP_MS
+            callback(CleanupHttpOutcome.HttpError(400,
+                """{"error":{"type":"unsupported_value","code":"unsupported_value","param":"temperature","message":"temperature is unsupported"}}"""))
+        }
+        CleanupWaterfallExecutor.execute(
+            text = "synthetic-independent transcript", prompt = "cleanup",
+            waterfall = CleanupWaterfall(listOf(CleanupStep(CleanupStepGroup.OPENAI_DIRECT, "model"))),
+            cursor = CleanupWaterfallCursor(), cancelHolder = InFlightCall(),
+            credentialLookup = { "auth" }, transport = transport,
+            localInference = LocalInferenceEngine { _, _, _, _, _ -> error("unexpected local step") },
+            nowMs = { now }, callback = { callbacks++ },
+        )
+        assertEquals(1, requests)
+        assertEquals(1, callbacks)
+    }
+
+    @Test fun `sub 250ms temperature retry uses only actual remaining deadline`() {
+        var now = 100L
+        var requests = 0
+        var retryTimeouts: CleanupStepTimeouts? = null
+        var result: PostProcessor.Result? = null
+        val transport = CleanupHttpTransport { _, _, _, timeouts, _, callback ->
+            requests++
+            if (requests == 1) {
+                now = 100L + CLEANUP_WATERFALL_HARD_CAP_MS - 150L
+                callback(CleanupHttpOutcome.HttpError(400,
+                    """{"error":{"type":"unsupported_value","code":"unsupported_value","param":"temperature","message":"temperature is unsupported"}}"""))
+            } else {
+                retryTimeouts = timeouts
+                callback(CleanupHttpOutcome.Ok("""{"choices":[{"message":{"content":"cleaned"}}]}"""))
+            }
+        }
+        CleanupWaterfallExecutor.execute(
+            text = "synthetic-independent transcript", prompt = "cleanup",
+            waterfall = CleanupWaterfall(listOf(CleanupStep(CleanupStepGroup.OPENAI_DIRECT, "model"))),
+            cursor = CleanupWaterfallCursor(), cancelHolder = InFlightCall(),
+            credentialLookup = { "auth" }, transport = transport,
+            localInference = LocalInferenceEngine { _, _, _, _, _ -> error("unexpected local step") },
+            nowMs = { now }, callback = { result = it },
+        )
+        assertEquals(2, requests)
+        assertEquals(150L, retryTimeouts?.callMs)
+        assertEquals(150L, retryTimeouts?.connectMs)
+        assertEquals("cleaned", result?.text)
+    }
+
+    @Test fun `a second structured temperature rejection ends after exactly one retry`() {
+        var requests = 0
+        var callbacks = 0
+        var result: PostProcessor.Result? = null
+        val transport = CleanupHttpTransport { _, _, _, _, _, callback ->
+            requests++
+            callback(CleanupHttpOutcome.HttpError(400,
+                """{"error":{"type":"unsupported_parameter","code":"unsupported_parameter","param":"temperature","message":"temperature is unsupported"}}"""))
+        }
+        CleanupWaterfallExecutor.execute(
+            text = "transcript", prompt = "cleanup",
+            waterfall = CleanupWaterfall(listOf(CleanupStep(CleanupStepGroup.OPENAI_DIRECT, "model"))),
+            cursor = CleanupWaterfallCursor(), cancelHolder = InFlightCall(),
+            credentialLookup = { "auth" }, transport = transport,
+            localInference = LocalInferenceEngine { _, _, _, _, _ -> error("unexpected local step") },
+            callback = { callbacks++; result = it },
+        )
+        assertEquals(2, requests)
+        assertEquals(1, callbacks)
+        assertTrue(result?.error?.contains("unsupported") == true)
     }
 
     @Test fun `a connection failure on the first OmniRoute sub-step skips its remaining siblings`() {

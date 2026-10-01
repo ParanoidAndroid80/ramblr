@@ -4,6 +4,8 @@ import com.trevornk.ramblr.AnthropicCleanupProvider
 import com.trevornk.ramblr.GeminiCleanupProvider
 import com.trevornk.ramblr.NetworkClients
 import com.trevornk.ramblr.PostProcessor
+import com.trevornk.ramblr.ProviderKind
+import com.trevornk.ramblr.TemperatureRejectionClassifier
 import com.trevornk.ramblr.VocabularyTerms
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
@@ -66,30 +68,44 @@ private enum class Provider(val label: String, val apiKeyEnv: String, val models
     GEMINI("gemini", "GEMINI_API_KEY", "GEMINI_EVAL_MODELS", listOf("gemini-2.5-flash-lite", "gemini-2.5-flash")),
 }
 
-/** Delegates to the single production list in [PostProcessor.rejectsTemperature] (#106/#194) --
- *  this harness previously carried its own copy, which is exactly the drift the production
- *  helper was extracted to prevent. */
-private fun openAiRejectsTemperature(model: String): Boolean =
-    PostProcessor.rejectsTemperature(model)
+/** Isolated, negative-only runtime observations; never performs a synthetic preflight request. */
+private val evalUnsupportedTemperature = java.util.concurrent.ConcurrentHashMap<String, Long>()
+private const val EVAL_NEGATIVE_TTL_MS = 7L * 24 * 60 * 60 * 1000
+
+private fun evalTemperatureKey(apiKey: String, model: String): String {
+    val material = "${PostProcessor.ENDPOINT_URL}\u0000$model\u0000$apiKey"
+    return java.security.MessageDigest.getInstance("SHA-256").digest(material.toByteArray())
+        .joinToString("") { "%02x".format(it) }
+}
 
 /** Calls OpenAI's real `/v1/chat/completions`, reusing [PostProcessor]'s request/response shape. */
 private fun callOpenAi(apiKey: String, model: String, prompt: String, text: String): PostProcessor.Result {
-    val body = PostProcessor.buildRequestBody(text, prompt, model, omitTemperature = openAiRejectsTemperature(model))
-        .toString().toRequestBody("application/json".toMediaType())
-    val request = Request.Builder()
-        .url(PostProcessor.ENDPOINT_URL)
-        .header("Authorization", "Bearer $apiKey")
-        .post(body)
-        .build()
-
     return try {
-        NetworkClients.shared.newCall(request).execute().use { response ->
-            val responseBody = response.body?.string() ?: ""
-            if (!response.isSuccessful && responseBody.isBlank()) {
-                PostProcessor.Result(null, "HTTP ${response.code}")
-            } else {
-                PostProcessor.parseResponse(responseBody)
+        val key = evalTemperatureKey(apiKey, model)
+        val now = System.currentTimeMillis()
+        evalUnsupportedTemperature.entries.removeIf { now - it.value >= EVAL_NEGATIVE_TTL_MS || now < it.value }
+        val knownUnsupported = PostProcessor.rejectsTemperature(model) || evalUnsupportedTemperature.containsKey(key)
+        val original = PostProcessor.buildRequestBody(text, prompt, model)
+        if (knownUnsupported) original.remove("temperature")
+        fun request(body: JSONObject) = Request.Builder().url(PostProcessor.ENDPOINT_URL)
+            .header("Authorization", "Bearer $apiKey")
+            .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+        var response = NetworkClients.shared.newCall(request(original)).execute()
+        var responseBody = response.body?.string().orEmpty()
+        if (!knownUnsupported && TemperatureRejectionClassifier.isTemperatureRejection(responseBody, response.code)) {
+            response.close()
+            evalUnsupportedTemperature[key] = System.currentTimeMillis()
+            while (evalUnsupportedTemperature.size > 128) {
+                val oldest = evalUnsupportedTemperature.minByOrNull { it.value } ?: break
+                evalUnsupportedTemperature.remove(oldest.key, oldest.value)
             }
+            val retry = JSONObject(original.toString()).apply { remove("temperature") }
+            response = NetworkClients.shared.newCall(request(retry)).execute()
+            responseBody = response.body?.string().orEmpty()
+        }
+        response.use {
+            if (!it.isSuccessful && responseBody.isBlank()) PostProcessor.Result(null, "HTTP ${it.code}")
+            else PostProcessor.parseResponse(responseBody)
         }
     } catch (e: IOException) {
         PostProcessor.Result(null, e.message ?: "network error")

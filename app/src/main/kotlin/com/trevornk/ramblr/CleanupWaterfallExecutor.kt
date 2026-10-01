@@ -8,6 +8,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
+import org.json.JSONObject
 
 /**
  * Timeouts for one waterfall step's network client. See ADR-0001 / docs/adr/0001-cleanup-
@@ -43,6 +44,17 @@ data class CleanupStepTimeouts(
  * the sub-millisecond edge, not a routine path.
  */
 const val MIN_STEP_CALL_BUDGET_MS = 250L
+
+/** Retry-only bound: unlike a fresh step, a parameter retry must never borrow the 250ms floor. */
+internal fun temperatureRetryTimeouts(deadlineAtMs: Long, nowMs: Long): CleanupStepTimeouts? {
+    val remainingMs = deadlineAtMs - nowMs
+    if (remainingMs <= 0L) return null
+    return CleanupStepTimeouts(
+        connectMs = minOf(CleanupStepTimeouts.DEFAULT.connectMs, remainingMs),
+        readMs = minOf(CleanupStepTimeouts.DEFAULT.readMs, remainingMs),
+        callMs = remainingMs,
+    )
+}
 
 /**
  * Per-step network timeouts for a cloud step, clamped to the waterfall's remaining wall clock
@@ -542,7 +554,8 @@ object RealCleanupHttpTransport : CleanupHttpTransport {
  * [cursor]'s last-known-good index, attempts steps in order, and on any [CleanupStepOutcome]
  * falls through to the next step — or, for a [CleanupStepOutcome.ConnectionFailed], skips every
  * remaining step in that same host group, since they'd fail identically against the same dead
- * host. No retries: this is a foreground call blocking a user waiting on their transcript.
+ * host. Only an explicit temperature-parameter rejection gets one retry without that parameter;
+ * other failures are not retried because this call blocks a user waiting on their transcript.
  *
  * Deliberately takes no [android.content.Context] — [credentialLookup] is the caller's seam onto
  * the credential store (via [ProviderChainRuntime.providerKindForCleanupSlot] +
@@ -597,6 +610,7 @@ object CleanupWaterfallExecutor {
         // transcription entries in both logs. Defaulted to null so every existing call
         // site/unit test (none of which is Android-context-aware) is unaffected.
         benchmarkContext: android.content.Context? = null,
+        temperatureCacheContext: android.content.Context? = null,
         benchmarkCorrelationId: String? = null,
         callback: (PostProcessor.Result) -> Unit,
     ) {
@@ -642,7 +656,7 @@ object CleanupWaterfallExecutor {
                 return
             }
 
-            performStep(steps[index], text, prompt, localPrompt, localVocabulary, credentialLookup, entryCredentialLookup, transport, localInference, localModelPath, cancelHolder, deadlineAtMs, isLastStep = index == steps.lastIndex) { outcome ->
+            performStep(steps[index], text, prompt, localPrompt, localVocabulary, credentialLookup, entryCredentialLookup, transport, localInference, localModelPath, cancelHolder, deadlineAtMs, nowMs, temperatureCacheContext, isLastStep = index == steps.lastIndex) { outcome ->
                 logStepOutcome(steps[index], startedAtMs, outcome, benchmarkContext, benchmarkCorrelationId)
                 when (outcome) {
                     is CleanupStepOutcome.Success -> {
@@ -739,6 +753,8 @@ object CleanupWaterfallExecutor {
         localModelPath: () -> String?,
         cancelHolder: InFlightCall,
         deadlineAtMs: Long,
+        nowMs: () -> Long,
+        temperatureCacheContext: android.content.Context?,
         isLastStep: Boolean,
         callback: (CleanupStepOutcome) -> Unit,
     ) {
@@ -812,20 +828,36 @@ object CleanupWaterfallExecutor {
                 AnthropicCleanupProvider.ENDPOINT_URL,
                 AnthropicCleanupProvider.headers(apiKey),
                 AnthropicCleanupProvider.buildRequestBody(text, prompt, step.model).toString(),
-                cloudStepTimeouts(deadlineAtMs, System.currentTimeMillis()),
+                cloudStepTimeouts(deadlineAtMs, nowMs()),
                 cancelHolder,
             ) { httpOutcome -> callback(toStepOutcome(httpOutcome, AnthropicCleanupProvider::parseResponse)) }
             return
         }
 
         if (step.group == CleanupStepGroup.GEMINI_DIRECT) {
-            transport.send(
-                GeminiCleanupProvider.endpointUrl(step.model),
-                GeminiCleanupProvider.headers(apiKey),
-                GeminiCleanupProvider.buildRequestBody(text, prompt).toString(),
-                cloudStepTimeouts(deadlineAtMs, System.currentTimeMillis()),
-                cancelHolder,
-            ) { httpOutcome -> callback(toStepOutcome(httpOutcome, GeminiCleanupProvider::parseResponse)) }
+            val cache = temperatureCacheContext?.let(TemperatureCapabilityStore::forContext)
+            val identity = cache?.let { TemperatureCapabilityStore.identity(ProviderKind.GEMINI,
+                GeminiCleanupProvider.endpointUrl(step.model), GeminiCleanupProvider.headers(apiKey), step.model,
+                "", "", 0.0, step.entryId) }
+            val body = GeminiCleanupProvider.buildRequestBody(text, prompt)
+            val omit = cache != null && identity != null && cache.state(identity) == TemperatureCapabilityStore.State.UNSUPPORTED
+            if (omit) body.optJSONObject("generationConfig")?.remove("temperature")
+            executeTemperatureAwareRequest(
+                url = GeminiCleanupProvider.endpointUrl(step.model),
+                headers = GeminiCleanupProvider.headers(apiKey),
+                body = body,
+                transport = transport,
+                cancelHolder = cancelHolder,
+                deadlineAtMs = deadlineAtMs,
+                nowMs = nowMs,
+                cache = cache,
+                identity = identity,
+                parse = GeminiCleanupProvider::parseResponse,
+                hasTemperature = { it.optJSONObject("generationConfig")?.has("temperature") == true },
+                removeTemperature = { it.optJSONObject("generationConfig")?.remove("temperature") },
+                timeoutMs = { cloudStepTimeouts(deadlineAtMs, nowMs()) },
+                callback = callback,
+            )
             return
         }
 
@@ -836,13 +868,84 @@ object CleanupWaterfallExecutor {
             CleanupStepGroup.GEMINI_DIRECT -> "" // unreachable, handled above
             CleanupStepGroup.LOCAL_LLM -> "" // unreachable, handled above
         }
-        transport.send(
-            PostProcessor.endpointUrl(baseUrl),
-            mapOf("Authorization" to "Bearer $apiKey"),
-            PostProcessor.buildRequestBody(text, prompt, step.model).toString(),
-            cloudStepTimeouts(deadlineAtMs, System.currentTimeMillis()),
-            cancelHolder,
-        ) { httpOutcome -> callback(toStepOutcome(httpOutcome, PostProcessor::parseResponse)) }
+        val temperatureStore = temperatureCacheContext?.let(TemperatureCapabilityStore::forContext)
+        val temperatureIdentity = temperatureStore?.let {
+            TemperatureCapabilityStore.identity(
+                if (step.group == CleanupStepGroup.OMNIROUTE) ProviderKind.OMNIROUTE else ProviderKind.OPENAI,
+                PostProcessor.endpointUrl(baseUrl), mapOf("Authorization" to "Bearer $apiKey"), step.model,
+                "", "stream=false", 0.0, step.entryId,
+            )
+        }
+        val initialBody = PostProcessor.buildRequestBody(text, prompt, step.model)
+        val omitKnownUnsupported = temperatureStore != null && temperatureIdentity != null &&
+            temperatureStore.state(temperatureIdentity) == TemperatureCapabilityStore.State.UNSUPPORTED
+        if (omitKnownUnsupported) initialBody.remove("temperature")
+        executeTemperatureAwareRequest(
+            url = PostProcessor.endpointUrl(baseUrl),
+            headers = mapOf("Authorization" to "Bearer $apiKey"),
+            body = initialBody,
+            transport = transport,
+            cancelHolder = cancelHolder,
+            deadlineAtMs = deadlineAtMs,
+            nowMs = nowMs,
+            cache = temperatureStore,
+            identity = temperatureIdentity,
+            parse = PostProcessor::parseResponse,
+            hasTemperature = { it.has("temperature") },
+            removeTemperature = { it.remove("temperature") },
+            timeoutMs = { cloudStepTimeouts(deadlineAtMs, nowMs()) },
+            callback = callback,
+        )
+    }
+
+    private fun executeTemperatureAwareRequest(
+        url: String,
+        headers: Map<String, String>,
+        body: JSONObject,
+        transport: CleanupHttpTransport,
+        cancelHolder: InFlightCall,
+        deadlineAtMs: Long,
+        nowMs: () -> Long,
+        cache: TemperatureCapabilityStore?,
+        identity: TemperatureCapabilityStore.Identity?,
+        parse: (String) -> PostProcessor.Result,
+        hasTemperature: (JSONObject) -> Boolean,
+        removeTemperature: (JSONObject) -> Any?,
+        timeoutMs: () -> CleanupStepTimeouts,
+        callback: (CleanupStepOutcome) -> Unit,
+    ) {
+        val sentWithoutTemperature = !hasTemperature(body)
+        val observationSequence = if (!sentWithoutTemperature && cache != null && identity != null)
+            cache.beginObservation(identity) else null
+        transport.send(url, headers, body.toString(), timeoutMs(), cancelHolder) { outcome ->
+            val rejectsTemperature = !sentWithoutTemperature && outcome is CleanupHttpOutcome.HttpError &&
+                TemperatureRejectionClassifier.isTemperatureRejection(outcome.body, outcome.code)
+            if (rejectsTemperature) {
+                if (cancelHolder.isCancelled) {
+                    if (cache != null && identity != null && observationSequence != null)
+                        cache.finishObservation(identity, observationSequence)
+                    callback(CleanupStepOutcome.Cancelled)
+                } else {
+                    if (cache != null && identity != null && observationSequence != null)
+                        cache.record(identity, TemperatureCapabilityStore.State.UNSUPPORTED, observationSequence)
+                    val retryTimeouts = temperatureRetryTimeouts(deadlineAtMs, nowMs())
+                    if (retryTimeouts == null) callback(toStepOutcome(outcome, parse))
+                    else {
+                        val retryBody = JSONObject(body.toString()).apply { removeTemperature(this) }.toString()
+                        transport.send(url, headers, retryBody, retryTimeouts, cancelHolder) { retry ->
+                            callback(toStepOutcome(retry, parse))
+                        }
+                    }
+                }
+            } else {
+                if (cache != null && identity != null && observationSequence != null) {
+                    val supported = outcome is CleanupHttpOutcome.Ok && !parse(outcome.body).text.isNullOrBlank()
+                    if (supported) cache.record(identity, TemperatureCapabilityStore.State.SUPPORTED, observationSequence)
+                    else cache.finishObservation(identity, observationSequence)
+                }
+                callback(toStepOutcome(outcome, parse))
+            }
+        }
     }
 
     private fun toStepOutcome(httpOutcome: CleanupHttpOutcome, parse: (String) -> PostProcessor.Result): CleanupStepOutcome =
