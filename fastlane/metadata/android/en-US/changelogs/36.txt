@@ -1,0 +1,9 @@
+Provider accounts, Groq and OpenRouter presets, and History on the main screen.
+
+- Each provider entry has its own API key, can be turned off, and can do transcription, cleanup, or both.
+- Groq and OpenRouter presets.
+- Local/cloud fallback settings are no longer hidden while you edit them.
+- Fixed "Local model still downloading" when models were installed.
+- Lower memory use on low-RAM devices.
+- Cleanup adapts to models that reject the temperature setting.
+- History is on the main screen.
