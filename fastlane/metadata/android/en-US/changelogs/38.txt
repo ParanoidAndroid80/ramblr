@@ -1,0 +1,3 @@
+See when cleanup is running.
+
+- The floating icon's ring now turns green while cleanup runs, so you can tell transcription and cleanup apart. Screen readers announce "Cleaning up" during that step.
