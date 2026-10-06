@@ -255,6 +255,23 @@
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
 
+        <!-- #284: short-lived foreground service that holds the process at foreground priority
+             while a dictation is still being transcribed/cleaned AFTER the user has left the
+             field, so switching apps mid-transcription doesn't get the work reclaimed. Started
+             lazily by DictationRuntime.holdForLeavingHost() from the IME's onFinishInput /
+             onWindowHidden (an allowed background start: Ramblr is still the current input
+             method), never on the stay-in-field path; stopped the moment the pipeline is
+             terminal, and self-limited by a hard cap and onTimeout. The accessibility host does
+             not use it.
+             dataSync reuses the type + FOREGROUND_SERVICE_DATA_SYNC permission already declared
+             for model downloads; `microphone` is deliberately NOT used (capture has ended, and it
+             would be subject to the while-in-use background-start restriction).
+             Not exported: only this app starts it. See docs/adr/0002-background-transcription.md. -->
+        <service
+            android:name=".BackgroundTranscriptionService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- No-UI trampoline reached only via the "icon hidden" notification's own explicit
              PendingIntent (Feature B, IconVisibilityNotifications); never invoked from outside
              this app. Must be an Activity (not a BroadcastReceiver) so tapping the notification

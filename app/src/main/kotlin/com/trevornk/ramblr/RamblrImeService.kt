@@ -37,6 +37,9 @@ class RamblrImeService : InputMethodService() {
     private val historyStore by lazy { DictationHistoryStore.forContext(this) }
     private val mainHandler = Handler(Looper.getMainLooper())
     private var editorPolicy = ImeEditorPolicy(allowsDictation = false, allowsRetention = false)
+    /** #284: the bound editor is a secure (password/PIN) one. Distinct from `!allowsDictation`,
+     *  which is also true between editors; only this may veto repainting an enabled mic. */
+    private var secureEditorBound = false
 
     private var statusView: TextView? = null
     private var partialView: TextView? = null
@@ -160,6 +163,7 @@ class RamblrImeService : InputMethodService() {
         editorGeneration++
         editorIdentity = identityOf(attribute)
         editorPolicy = imeEditorPolicy(editorIdentity.inputType, editorIdentity.imeOptions)
+        secureEditorBound = !editorPolicy.allowsDictation
         // Android restarts input for a new editor without necessarily re-showing the input view, so
         // a secure-field teardown has to be undone here or the panel stays dead (#241).
         val transition = imeEditorTransition(editorPolicy.allowsDictation, panelController != null)
@@ -169,11 +173,14 @@ class RamblrImeService : InputMethodService() {
             panelController?.onEditorChanged(editorGeneration, editorIdentity, currentInputConnection)
             if (!restarting || transition.rearmRuntime) {
                 renderPartial("")
-                renderState(ImeUiState.IDLE)
+                // #284: a detached dictation is still transcribing; its own idle callback paints IDLE.
+                if (runtime?.currentState() != RecordingStateMachine.State.TRANSCRIBING) renderState(ImeUiState.IDLE)
             }
         } else {
             loseLifecycle(ImeLifecycleLoss.INPUT_FINISHED)
             destination.invalidate()
+            // #284: a detached (still-transcribing) controller must learn the new editor is secure.
+            panelController?.onEditorChanged(editorGeneration, editorIdentity, currentInputConnection)
             renderPartial("")
             renderState(ImeUiState.SECURE_FIELD)
         }
@@ -183,6 +190,7 @@ class RamblrImeService : InputMethodService() {
         super.onStartInputView(info, restarting)
         editorIdentity = identityOf(info)
         editorPolicy = imeEditorPolicy(editorIdentity.inputType, editorIdentity.imeOptions)
+        secureEditorBound = !editorPolicy.allowsDictation
         if (editorPolicy.allowsDictation) {
             destination.editorChanged(editorGeneration, editorIdentity, currentInputConnection)
             ensureRuntime()
@@ -190,6 +198,7 @@ class RamblrImeService : InputMethodService() {
         } else {
             loseLifecycle(ImeLifecycleLoss.INPUT_FINISHED)
             destination.invalidate()
+            panelController?.onEditorChanged(editorGeneration, editorIdentity, currentInputConnection)
             renderPartial("")
             renderState(ImeUiState.SECURE_FIELD)
         }
@@ -197,15 +206,18 @@ class RamblrImeService : InputMethodService() {
 
     override fun onFinishInput() {
         loseLifecycle(ImeLifecycleLoss.INPUT_FINISHED)
+        holdProcessForDetachedTranscription()
         editorGeneration++
         editorIdentity = ImeEditorIdentity(null, 0, 0)
         editorPolicy = ImeEditorPolicy(allowsDictation = false, allowsRetention = false)
+        secureEditorBound = false
         destination.invalidate()
         super.onFinishInput()
     }
 
     override fun onWindowHidden() {
         loseLifecycle(ImeLifecycleLoss.HIDDEN)
+        holdProcessForDetachedTranscription()
         super.onWindowHidden()
     }
 
@@ -278,12 +290,19 @@ class RamblrImeService : InputMethodService() {
             // accessibility API involved, no polling.
             isPackageExcluded = { pkg -> PerAppExclusionStore.isExcluded(this, pkg) },
             isRecording = { runtime?.isRecording() ?: false },
+            backgroundSink = BackgroundResultSink(
+                copyToClipboard = { ClipboardUtil.copy(this, it) },
+                postNotice = { BackgroundDictationNotifications.postResult(this, it) },
+            ),
         )
         // #233 Phase 1: the IME is the first (and only) host to reach the merged cloud-live seam.
         // CloudLiveWiring returns null unless the user opted in, chose cloud transcription, and
         // has a Gemini key -- so the default construction is byte-for-byte the previous behavior.
         // Accessibility stays final-only in this phase and is intentionally not wired.
-        createdRuntime = DictationRuntime(this, controller.listener, cloudLiveFactory = { CloudLiveWiring.factoryOrNull(this) })
+        createdRuntime = DictationRuntime(
+            this, controller.listener, cloudLiveFactory = { CloudLiveWiring.factoryOrNull(this) },
+            backgroundWork = BackgroundTranscriptionService.work(this),
+        )
         panelController = controller
         runtime = createdRuntime
         controller.onEditorChanged(editorGeneration, editorIdentity, currentInputConnection)
@@ -300,8 +319,36 @@ class RamblrImeService : InputMethodService() {
         ProcessActiveImeModelReadyReload.register(modelReadyReload)
     }
 
+    /**
+     * #284 lazy hold: the user is leaving the field and a transcription is still in flight, so
+     * ask for the foreground-service hold NOW. Starting a foreground service from the background
+     * is allowed here because this app is still the device's current input method (ADR-0002); a
+     * refused start is swallowed inside the service and the dictation carries on unprotected.
+     * Only on these two real leave signals, not on an onStartInput restart of the same field,
+     * which is not the user leaving. No-op when nothing is transcribing (including after a
+     * teardown, when the runtime reference is already gone).
+     */
+    private fun holdProcessForDetachedTranscription() {
+        runtime?.holdForLeavingHost()
+    }
+
     private fun loseLifecycle(reason: ImeLifecycleLoss) {
         val controller = panelController ?: return
+        // #284: a TRANSCRIBING dictation survives the user leaving the field -- the runtime keeps
+        // running (the foreground service holds the process), and delivery asks the ticket check
+        // where the text may go: the same field if it is still bound, else clipboard + history +
+        // notification. Recording is still torn down (the mic must be released), as is DESTROYED.
+        val transcribing = runtime?.currentState() == RecordingStateMachine.State.TRANSCRIBING
+        // A service torn down mid-transcription loses the result. If the user had already left the
+        // field (detached) nothing else will ever tell them; the controller only posts the notice
+        // when its destination is gone, so a still-bound field gets nothing new.
+        if (reason == ImeLifecycleLoss.DESTROYED && transcribing) {
+            runCatching { controller.listener.onDictationFailed(BackgroundFailure.FAILED) }
+        }
+        if (lifecycleLossActionFor(reason, transcribing) == LifecycleLossAction.DETACH_AND_FINISH) {
+            Log.i(TAG, "Keeping in-flight transcription alive across $reason")
+            return
+        }
         modelReadyReload?.let { modelReadyReload ->
             this.modelReadyReload = null
             ProcessActiveImeModelReadyReload.unregister(modelReadyReload)
@@ -321,11 +368,14 @@ class RamblrImeService : InputMethodService() {
         privateImeOptions = info?.privateImeOptions,
     )
 
-    private fun renderState(state: ImeUiState) {
+    private fun renderState(requested: ImeUiState) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            statusView?.post { renderState(state) }
+            statusView?.post { renderState(requested) }
             return
         }
+        // #284: a detached dictation finishing after the user moved into a secure editor must not
+        // repaint an enabled mic over the secure-field lock.
+        val state = if (secureEditorBound && requested != ImeUiState.SECURE_FIELD) ImeUiState.SECURE_FIELD else requested
         lastRenderedState = state
         statusView?.text = getString(when (state) {
             ImeUiState.IDLE -> R.string.ime_status_idle

@@ -382,12 +382,15 @@ open class WhisperAccessibilityService : AccessibilityService() {
         }
 
         override fun onEnterTranscribingUi() {
+            // #284: remember where this dictation was started, now, while the user is still there.
+            captureDictationTarget()
             handler.post { stopPulse() }
             setAppearance(COLOR_BUSY)
             setBusy(true)
         }
 
         override fun onIdleUi() {
+            clearDictationTarget()
             setBusy(false)
             setAppearance(COLOR_IDLE)
         }
@@ -429,6 +432,12 @@ open class WhisperAccessibilityService : AccessibilityService() {
             cleanupError: String?,
             feedbackDurationMs: Long,
         ) {
+            // #284: the field this dictation was started in is gone (another app or field is in
+            // front, or the device locked). Never type into whatever is focused now.
+            if (!deliveryTargetIsCurrent()) {
+                deliverToBackground(text, rawText, paidFallbackGroup, cleanupError)
+                return
+            }
             // rawText is non-null exactly when cleanup ran and succeeded -- the one branch that
             // routed through preview-before-inject (#40) before the extraction.
             if (rawText != null && PreviewBeforeInjectToggle.isEnabled(this@WhisperAccessibilityService)) {
@@ -445,6 +454,148 @@ open class WhisperAccessibilityService : AccessibilityService() {
         }
 
         override fun foregroundPackageName(): String? = currentForegroundPackageName()
+
+        // #284: a dictation that ended with no text. Only worth a notification when the user can
+        // no longer see the field it was for; otherwise the runtime's own toast is the whole story.
+        override fun onDictationFailed(failure: BackgroundFailure) {
+            if (!shouldNotifyBackgroundFailure(deliveryTargetIsCurrent())) return
+            backgroundSink.failed(failure)
+        }
+    }
+
+    // --- #284: background delivery -------------------------------------------------------------
+
+    /** Where the in-flight dictation was started: its package, and the focused node (if any) so a
+     *  move to a different field in the same app is detectable. Main thread only. */
+    internal class DictationTarget(val packageName: String, val node: AccessibilityNodeInfo?)
+
+    internal var dictationTarget: DictationTarget? = null
+
+    private val backgroundSink by lazy {
+        BackgroundResultSink(
+            copyToClipboard = { ClipboardUtil.copy(this, it) },
+            postNotice = { BackgroundDictationNotifications.postResult(this, it) },
+        )
+    }
+
+    private fun captureDictationTarget() {
+        clearDictationTarget()
+        try {
+            // Unreadable / unidentifiable => no target => fail open to the pre-#284 behavior.
+            val (pkg, node) = readCaptureTarget() ?: return
+            dictationTarget = DictationTarget(pkg, node)
+        } catch (e: Exception) {
+            Log.w(TAG, "Couldn't capture dictation target", e)
+        }
+    }
+
+    private fun clearDictationTarget() {
+        dictationTarget?.node?.recycle()
+        dictationTarget = null
+    }
+
+    /** Platform read #1 (test seam): who is in front and focused right now, at transcription
+     *  start. The returned node (if any) is owned by the caller. */
+    internal open fun readCaptureTarget(): Pair<String, AccessibilityNodeInfo?>? {
+        val root = rootInActiveWindow
+        val focused = root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        val pkg = captureTargetPackage(root?.packageName?.toString(), focused?.packageName?.toString())
+        root?.recycle()
+        if (pkg == null) {
+            focused?.recycle()
+            return null
+        }
+        return pkg to focused
+    }
+
+    /** Platform read #2 (test seam): the same facts again, now, at delivery time. */
+    internal open fun readDeliveryProbe(capturedPackage: String, capturedNode: AccessibilityNodeInfo?): DeliveryProbe {
+        val root = rootInActiveWindow
+        val focused = root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        val state = when {
+            focused == null || capturedNode == null -> CapturedFieldState.UNKNOWN
+            focused == capturedNode -> CapturedFieldState.FOCUSED
+            capturedNode.refresh() && !capturedNode.isFocused -> CapturedFieldState.MOVED_AWAY
+            else -> CapturedFieldState.UNKNOWN
+        }
+        val locked = (getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager)?.isKeyguardLocked == true
+        val probe = DeliveryProbe(
+            capturedPackage = capturedPackage,
+            foregroundPackage = root?.packageName?.toString(),
+            focusedPackage = focused?.packageName?.toString(),
+            deviceLocked = locked,
+            fieldState = state,
+        )
+        root?.recycle()
+        focused?.recycle()
+        return probe
+    }
+
+    /** True unless there is a positive signal the user left the field this dictation started in.
+     *  Any failure to read the world answers true (pre-#284 behavior). */
+    internal fun deliveryTargetIsCurrent(target: DictationTarget? = dictationTarget): Boolean {
+        target ?: return true
+        return try {
+            isDeliveryTargetCurrent(readDeliveryProbe(target.packageName, target.node))
+        } catch (e: Exception) {
+            Log.w(TAG, "Couldn't evaluate dictation target", e)
+            true
+        }
+    }
+
+    /**
+     * The dictation finished but its field is gone. Records history exactly once (the normal
+     * injectText funnel, which would also record, is bypassed), puts the text on the clipboard
+     * unless the app now in front is excluded (#256), reverts any streaming leftover in the old
+     * field, and posts one notification. Nothing is ever written into the now-focused field.
+     */
+    private fun deliverToBackground(
+        text: String,
+        rawText: String?,
+        paidFallbackGroup: CleanupStepGroup?,
+        cleanupError: String?,
+        // A dictation that already has a history row (a resolved preview #73, or an injection
+        // whose empty-scan retry found the user gone) updates it in place instead of duplicating.
+        existingHistoryTimestamp: Long? = null,
+        // A streaming session (#29) injectText already claimed before handing off to its retry.
+        claimedStreamingHandoff: StreamingPreviewSession? = null,
+    ) {
+        recordHistory(
+            rawText ?: text, cleanedText = if (rawText != null) text else null,
+            paidFallbackGroup = paidFallbackGroup, existingTimestamp = existingHistoryTimestamp,
+        )
+        val historySaved = prefs().getBoolean("dictation_history_enabled", true)
+
+        // Same claim-and-revert the exclusion path does, so a streaming partial typed into the old
+        // field before the user left isn't orphaned there.
+        val streamingHandoff = claimedStreamingHandoff ?: streamingSession ?: pendingStreamingHandoff
+        streamingSession = null
+        pendingStreamingHandoff = null
+        if (streamingHandoff != null) {
+            clearStreamingLeftover(streamingHandoff)
+            streamingHandoff.node.recycle()
+        }
+
+        // Consumed so a later, unrelated injection can't pick up this dictation's timing (H2, #192).
+        runtime.pipelineTiming.abandon()
+        updatePendingInjection(InjectMethod.NONE, text, rawText ?: text, null, null, null, 0L)
+
+        val excluded = ExclusionGating.shouldSuppressInsertion(
+            PerAppExclusionStore.isExcluded(this, currentForegroundPackageName())
+        )
+        val delivery = backgroundSink.deliverTargetGone(
+            text = text,
+            historySaved = historySaved,
+            cleanupFailed = cleanupError != null,
+            excluded = excluded,
+        )
+        Log.i(TAG, "Dictation target gone; delivery=$delivery (no insertion attempted)")
+        if (delivery == BackgroundDelivery.CLIPBOARD_AND_NOTIFY) {
+            fallbackClipboardText = text
+            showFeedback("Dictation finished — copied to clipboard · tap to copy again", FALLBACK_FEEDBACK_DURATION_MS, touchable = true, isFallback = true)
+        } else {
+            fallbackClipboardText = null
+        }
     }
 
     // #245: the accessibility/floating-icon host now reaches the same merged cloud-live seam
@@ -481,7 +632,11 @@ open class WhisperAccessibilityService : AccessibilityService() {
     @Synchronized
     private fun obtainRuntime(): DictationRuntime =
         runtimeInstance ?: DictationRuntime(
-            this, runtimeListener, cloudLiveFactory = { CloudLiveWiring.factoryOrNull(this) }
+            // #284: no foreground-service hold here, deliberately. The system binds an enabled
+            // accessibility service with BIND_FOREGROUND_SERVICE_WHILE_AWAKE, which keeps this
+            // process at foreground-service importance while the device is awake; the existing
+            // "ramblr:transcription" wakelock covers screen-off CPU. See ADR-0002 for the evidence.
+            this, runtimeListener, cloudLiveFactory = { CloudLiveWiring.factoryOrNull(this) },
         ).also { runtimeInstance = it }
 
     private var overlayView: FrameLayout? = null
@@ -547,6 +702,9 @@ open class WhisperAccessibilityService : AccessibilityService() {
     // Preview-before-inject (#40) — the cleaned-up candidate awaiting an explicit commit tap,
     // null whenever no preview is in flight. Only touched on the main thread.
     private var pendingPreview: CleanupPreviewState? = null
+    // #284: where the pending preview's dictation was started; owns its node. Null whenever no
+    // preview is pending (or nothing was captured, which fails open to the pre-#284 behavior).
+    private var pendingPreviewTarget: DictationTarget? = null
     private val previewTimeoutRunnable = Runnable { resolvePreview { it.timeout() } }
 
     // Empty-scan retry (#5) — at most one in flight, cancelled if the service tears down first.
@@ -764,6 +922,7 @@ open class WhisperAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         instance = null
+        clearDictationTarget()
         unregisterNetworkCallback()
         unregisterScreenStateReceiver()
         // Only tear down a runtime that was actually constructed. `runtime`'s getter is lazy
@@ -802,6 +961,8 @@ open class WhisperAccessibilityService : AccessibilityService() {
         // there's nothing left to persist here. Just drop the in-memory state; the history row
         // survives with the raw+candidate text exactly as it was when the preview began.
         pendingPreview = null
+        pendingPreviewTarget?.node?.recycle()
+        pendingPreviewTarget = null
         dismissStyleMenu()
         removeOverlay()
         super.onDestroy()
@@ -2268,6 +2429,12 @@ open class WhisperAccessibilityService : AccessibilityService() {
         // updates this exact row in place instead of adding a duplicate once the preview resolves.
         val historyTimestamp = recordHistory(rawText, cleanedText = candidateText, paidFallbackGroup = paidFallbackGroup)
         pendingPreview = CleanupPreviewState(rawText, candidateText, paidFallbackGroup, historyTimestamp)
+        // #284: the runtime goes idle right after deliverText() returns and onIdleUi forgets the
+        // shared dictationTarget, but this preview resolves up to PREVIEW_TIMEOUT_MS later. Move the
+        // target (and ownership of its node) into the preview so the user-left check still has
+        // something to compare against when the tap/timeout finally arrives.
+        pendingPreviewTarget = dictationTarget
+        dictationTarget = null
         handler.postDelayed(previewTimeoutRunnable, PREVIEW_TIMEOUT_MS)
 
         val truncated = candidateText.take(PREVIEW_PREVIEW_CHARS)
@@ -2279,14 +2446,38 @@ open class WhisperAccessibilityService : AccessibilityService() {
     private fun resolvePreview(action: (CleanupPreviewState) -> PreviewResolution) {
         val preview = pendingPreview ?: return
         pendingPreview = null
+        val previewTarget = pendingPreviewTarget
+        pendingPreviewTarget = null
         handler.removeCallbacks(previewTimeoutRunnable)
         val resolution = action(preview)
+        try {
+            // #284: the user may have left the field during the preview window. Same rule as the
+            // immediate branch of deliverText: never type into whatever is focused now. The
+            // preview's history row (#73) is updated in place, not duplicated.
+            if (!deliveryTargetIsCurrent(previewTarget)) {
+                if (resolution.committed) {
+                    deliverToBackground(
+                        resolution.textToInject, preview.rawText, preview.paidFallbackGroup, null,
+                        existingHistoryTimestamp = preview.historyTimestamp,
+                    )
+                } else {
+                    deliverToBackground(
+                        resolution.textToInject, null, preview.paidFallbackGroup, null,
+                        existingHistoryTimestamp = preview.historyTimestamp,
+                    )
+                }
+                return
+            }
+        } finally {
+            previewTarget?.node?.recycle()
+        }
         if (resolution.committed) {
             injectText(
                 resolution.textToInject,
                 rawText = preview.rawText,
                 paidFallbackGroup = preview.paidFallbackGroup,
                 existingHistoryTimestamp = preview.historyTimestamp,
+                deliveryTargetPackage = previewTarget?.packageName,
             )
         } else {
             // Discard/timeout falls back to raw text (see CleanupPreviewState) -- update the
@@ -2300,6 +2491,7 @@ open class WhisperAccessibilityService : AccessibilityService() {
                 // immediately, so "raw copied to clipboard" sent the user to an empty clipboard.
                 feedback = "Cleanup skipped — inserted raw text",
                 existingHistoryTimestamp = preview.historyTimestamp,
+                deliveryTargetPackage = previewTarget?.packageName,
             )
         }
     }
@@ -2450,6 +2642,10 @@ open class WhisperAccessibilityService : AccessibilityService() {
         // string from the call site is what made the old message claim a clipboard copy that
         // DIRECT injections wipe immediately (see [CleanupFailureNotice]).
         cleanupError: String? = null,
+        // #284: package the dictation was started in, for re-checking inside the empty-scan retry
+        // (by then onIdleUi has cleared the shared target). Defaults to the live target; null =
+        // unknown = fail open. A user-initiated raw retry has no live target, so it is unguarded.
+        deliveryTargetPackage: String? = dictationTarget?.packageName,
     ) {
         // Smart vocabulary suggestions (#216): every accepted dictation funnels through this
         // method -- direct injection, cleanup results, and preview-accepts alike (discarded
@@ -2522,8 +2718,18 @@ open class WhisperAccessibilityService : AccessibilityService() {
         // real delay to the common case where a candidate is already there.
         if (shouldRetryEmptyScan(candidates.size)) {
             Log.i(TAG, "No injection candidates on first scan; retrying in ${INJECTION_RETRY_DELAY_MS}ms")
+            val retryTarget = deliveryTargetPackage?.let { DictationTarget(it, null) }
             val retry = Runnable {
                 pendingInjectionRetry = null
+                // #284: the 200 ms rescan reads the *active window* again; if the user left in the
+                // meantime, hand over to the background path instead of typing into the new app.
+                if (!deliveryTargetIsCurrent(retryTarget)) {
+                    deliverToBackground(
+                        text, rawText, paidFallbackGroup, cleanupError,
+                        existingHistoryTimestamp = historyTimestamp, claimedStreamingHandoff = streamingHandoff,
+                    )
+                    return@Runnable
+                }
                 finishInjection(findInjectionCandidates(), text, rawText, priorClipboard, feedback, feedbackDurationMs, streamingHandoff, historyTimestamp, cleanupError)
             }
             pendingInjectionRetry = retry
