@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ramblr</string>
+    <string name="accessibility_service_label_floating">Ramblr (плавающая кнопка)</string>
+    <string name="accessibility_service_label_system">Ramblr (системное управление)</string>
+    <string name="accessibility_description">Диктовка: записывает речь, распознаёт её и вставляет текст в выбранное поле. Android также может показывать собственную кнопку специальных возможностей для Ramblr. Это отдельный системный ярлык.</string>
+    <string name="overlay_button_idle_description">Кнопка диктовки Ramblr. Нажмите дважды, чтобы начать запись.</string>
+    <string name="overlay_button_recording_description">Кнопка диктовки Ramblr. Идёт запись. Нажмите дважды, чтобы остановить запись и распознать речь.</string>
+    <string name="overlay_button_transcribing_description">Кнопка диктовки Ramblr. Распознавание речи. Удерживайте, чтобы отменить.</string>
+    <string name="overlay_button_cleaning_description">Кнопка диктовки Ramblr. Корректировка текста. Удерживайте, чтобы отменить.</string>
+    <string name="tile_label">Ramblr</string>
+    <string name="tile_subtitle_recording">Запись…</string>
+    <string name="tile_subtitle_service_disabled">Нажмите, чтобы включить службу специальных возможностей</string>
+    <string name="tile_subtitle_service_turned_off">Выключено — нажмите, чтобы включить</string>
+    <string name="ime_name">Голосовая клавиатура Ramblr</string>
+    <string name="ime_status_idle">Готово к диктовке</string>
+    <string name="ime_status_recording">Запись… нажмите на микрофон, чтобы остановить</string>
+    <string name="ime_status_transcribing">Распознавание речи…</string>
+    <string name="ime_status_cleaning">Корректировка текста…</string>
+    <string name="ime_status_error">Не удалось завершить диктовку</string>
+    <string name="ime_status_secure_field">Голосовой ввод недоступен в защищённых полях</string>
+    <string name="ime_partial_hint">Здесь появится распознанный текст</string>
+    <string name="ime_mic_start">Начать диктовку в Ramblr</string>
+    <string name="ime_mic_stop">Остановить запись и распознать речь</string>
+    <string name="ime_switch_keyboard">Сменить клавиатуру</string>
+    <string name="ime_open_settings">Открыть настройки Ramblr</string>
+</resources>

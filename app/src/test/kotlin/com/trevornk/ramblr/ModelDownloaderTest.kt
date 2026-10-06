@@ -61,9 +61,9 @@ class ModelDownloaderTest {
         // 100MB on disk, ~12.66% WER vs. ~7.5%), so it was never a real choice, just confusion.
         // Back to 4 for #197: Parakeet Unified 0.6B added as the best-English tier -- unlike
         // Moonshine it earns its slot with a real, measured quality edge (~5.9% vs ~7.5% WER).
-        assertEquals(4, MODEL_CATALOG.size)
+        assertEquals(5, MODEL_CATALOG.size)
         assertTrue(MODEL_CATALOG.any { it.recommended })
-        assertTrue(MODEL_CATALOG.all { it.archive.startsWith("sherpa-onnx-") })
+        assertTrue(MODEL_CATALOG.all { it.archive.startsWith("sherpa-onnx-") || it.archive == "giga-am-v3-e2e-rnnt-ru" })
         assertTrue(MODEL_CATALOG.all { it.sizeMb > 0 })
     }
 
@@ -102,13 +102,20 @@ class ModelDownloaderTest {
             "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" to 487_170_055L,
             "sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000-int8" to 104_337_827L,
             "sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8" to 153_692_328L,
+            // Hugging Face revision d63719e, four pinned files (2026-10-06).
+            "giga-am-v3-e2e-rnnt-ru" to 231_897_202L,
             "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06" to 57_267_600L,
         )
 
         for (model in MODEL_CATALOG + STREAMING_MODEL_CATALOG) {
+            if (model.parts.isNotEmpty()) {
+                assertEquals(4, model.parts.size)
+                assertTrue(model.parts.all { it.sha256.matches(Regex("[a-f0-9]{64}")) })
+            }
             val bytes = realBytes[model.archive]
                 ?: fail("no recorded byte size for ${model.archive}; add it when adding a catalog entry")
-            val expectedDecimalMb = ((bytes as Long) / 1_000_000L).toInt()
+            val expectedDecimalMb = if (model.parts.isNotEmpty()) ((bytes as Long) + 999_999L).div(1_000_000L).toInt()
+                else ((bytes as Long) / 1_000_000L).toInt()
             assertEquals(
                 "${model.archive} sizeMb should be decimal MB ($bytes bytes), not MiB",
                 expectedDecimalMb,
@@ -155,8 +162,10 @@ class ModelDownloaderTest {
         // Every shipped model must carry a real checksum -- see Model.sha256 kdoc.
         // A null here isn't a bug, but it does mean download() refuses to install
         // that model until a real hash is sourced, so guard against forgetting one.
-        assertTrue(MODEL_CATALOG.all { it.sha256 != null })
-        assertTrue(MODEL_CATALOG.all { it.sha256!!.matches(Regex("[0-9a-f]{64}")) })
+        assertTrue(MODEL_CATALOG.all { model ->
+            if (model.parts.isNotEmpty()) model.parts.all { it.sha256.matches(Regex("[0-9a-f]{64}")) }
+            else model.sha256?.matches(Regex("[0-9a-f]{64}")) == true
+        })
     }
 
     @Test fun `no offline catalog entry is marked streaming`() {

@@ -188,6 +188,8 @@ class LocalTranscriber private constructor(private val recognizer: OfflineRecogn
             val joiner = findFile(p, "joiner")
             if (encoder != null && decoder != null && joiner != null) {
                 return OfflineRecognizerConfig(
+                    // GigaAM uses 64 mel bins; the other NeMo transducers use the default 80.
+                    featConfig = FeatureConfig(featureDim = if (dir.name == "giga-am-v3-e2e-rnnt-ru") 64 else 80),
                     modelConfig = OfflineModelConfig(
                         transducer = OfflineTransducerModelConfig(
                             encoder = encoder,

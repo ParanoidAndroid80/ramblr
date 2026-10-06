@@ -669,7 +669,7 @@ class LocalLlmWaterfallStepTest {
         execute(waterfall, transport, engine, localModelPath = { "/data/data/app/files/cleanup_models/model.gguf" })
 
         assertEquals(1, engine.calls.size)
-        assertEquals(PostProcessor.SIMPLE_PROMPT, engine.calls[0].first)
+        assertEquals(PostProcessor.SIMPLE_PROMPT + TranscriptLanguageGuard.PROMPT_RULE, engine.calls[0].first)
     }
 
     // --- #182 option 2: vocabulary post-pass over accepted local output ------------------------
@@ -688,7 +688,7 @@ class LocalLlmWaterfallStepTest {
         assertEquals("Deployed it on Hetzner last night.", result.text)
         // The terms must reach the model's OUTPUT, never its prompt (#182: prompt interpolation
         // is what made LFM2.5 echo the term list).
-        assertEquals(PostProcessor.SIMPLE_PROMPT, engine.calls[0].first)
+        assertEquals(PostProcessor.SIMPLE_PROMPT + TranscriptLanguageGuard.PROMPT_RULE, engine.calls[0].first)
     }
 
     @Test fun `the vocabulary post-pass defaults to a no-op when no terms are passed`() {
@@ -891,7 +891,7 @@ class LocalLlmWaterfallStepTest {
         execute(waterfall, transport, engine, localModelPath = { "/path/to/model.gguf" })
 
         val (systemPrompt, userText, modelPath) = engine.calls.single()
-        assertEquals(PostProcessor.SIMPLE_PROMPT, systemPrompt) // default localPrompt, not the `prompt` arg
+        assertEquals(PostProcessor.SIMPLE_PROMPT + TranscriptLanguageGuard.PROMPT_RULE, systemPrompt) // default localPrompt, not the `prompt` arg
         assertEquals("raw transcript", userText) // the `text` arg passed to execute()
         assertEquals("/path/to/model.gguf", modelPath)
     }

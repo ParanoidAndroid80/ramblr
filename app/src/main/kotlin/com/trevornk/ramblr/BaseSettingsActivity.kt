@@ -42,6 +42,12 @@ abstract class BaseSettingsActivity : AppCompatActivity() {
     override fun setContentView(view: View) {
         super.setContentView(view)
         applyContentInsets(view)
+        // Most settings screens still build labels directly in Kotlin. Translate those labels
+        // when the view tree changes, including status text refreshed after onResume.
+        if (resources.configuration.locales[0].language == "ru") {
+            view.viewTreeObserver.addOnGlobalLayoutListener { RussianUi.localize(view) }
+            RussianUi.localize(view)
+        }
     }
 
     private fun applyContentInsets(content: View) {

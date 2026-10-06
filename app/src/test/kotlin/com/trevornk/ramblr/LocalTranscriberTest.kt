@@ -110,6 +110,17 @@ class LocalTranscriberTest {
 
     // -- detectModelConfig: Parakeet TDT (bare, transducer) --
 
+    @Test fun `GigaAM uses 64 mel features`() {
+        withTempDir { root ->
+            val dir = File(root, "giga-am-v3-e2e-rnnt-ru").apply { mkdirs() }
+            layout(dir, "tokens.txt", "encoder.int8.onnx", "decoder.onnx", "joiner.onnx")
+            val config = LocalTranscriber.detectModelConfig(dir)
+            assertNotNull(config)
+            assertEquals("nemo_transducer", config!!.modelConfig.modelType)
+            assertEquals(64, config.featConfig.featureDim)
+        }
+    }
+
     @Test fun `detects a bare-filename Parakeet transducer archive`() {
         withTempDir { tmp ->
             layout(tmp, "tokens.txt", "encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx")

@@ -33,6 +33,8 @@ data class ModelLicense(
     /** True only if free/libre per DFSG/FSF/OSI -- see this type's kdoc. */
     val isFree: Boolean,
 )
+/** One checksum-pinned file in a model distributed as separate ONNX assets. */
+data class ModelPart(val fileName: String, val sha256: String, val sizeMb: Int)
 
 /** CC-BY-4.0: free, attribution only. NVIDIA's NeMo ASR checkpoints. */
 val CC_BY_4_0 = ModelLicense("CC-BY-4.0", "https://creativecommons.org/licenses/by/4.0/", isFree = true)
@@ -146,6 +148,8 @@ data class Model(
      * -- see [requiresLicenseConsent].
      */
     val license: ModelLicense = CC_BY_4_0,
+    /** Direct-download ONNX files, resolved relative to [sourceUrl]. Empty for archives. */
+    val parts: List<ModelPart> = emptyList(),
 ) {
     /** True for any catalog entry installed as one file with no extraction step (#37's local-
      *  cleanup GGUFs and #108's VAD ONNX model) -- as opposed to the tar.bz2 ASR archives, which
@@ -169,6 +173,20 @@ data class Model(
 // the one non-tiered "alternative architecture" entry (multilingual, punctuated) and is
 // interleaved by its own real quality standing, not pinned to the bottom.
 val MODEL_CATALOG = listOf(
+    Model(
+        name = "GigaAM v3 (RU, с пунктуацией)",
+        archive = "giga-am-v3-e2e-rnnt-ru",
+        sizeMb = 232,
+        quality = "Русская речь · пунктуация и числа",
+        sourceUrl = "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/resolve/d63719e3e78223a42b779a5eb84d666c188d8f46",
+        parts = listOf(
+            ModelPart("encoder.int8.onnx", "369f35a71bf288d3b8e0391fabd8dba5f2314088d440bca474056b7b4b6e66bf", 225),
+            ModelPart("decoder.onnx", "38fc7475443ea2a26f63211ca350f73ac50fff824ab7a3876ee2bd610c53bbc4", 5),
+            ModelPart("joiner.onnx", "602ff7017a93311aad34df1437c8d7f49911353c13d6eae7a6ee7b041339465c", 3),
+            ModelPart("tokens.txt", "39abae20e692998290c574e606f11a9edef2902a1995463fcff63d1490cf22b7", 1),
+        ),
+        license = ModelLicense("MIT", "https://github.com/salute-developers/GigaAM/blob/main/LICENSE", isFree = true),
+    ),
     // NVIDIA parakeet-unified-en-0.6b (HF release 2026-04-07), int8 non-streaming sherpa-onnx
     // export -- the biggest quality jump available to the local path: 1.67% WER on the #177
     // measured eval (LibriSpeech test-clean, 300 utts, 2026-08-26 -- the same harness scored
@@ -629,6 +647,10 @@ object ModelDownloader {
      * (WorkManager unique work), not here.
      */
     fun download(ctx: Context, model: Model, isCancelled: () -> Boolean = { false }, onState: (DownloadState) -> Unit) {
+        if (model.parts.isNotEmpty()) {
+            downloadParts(ctx, model, isCancelled, onState)
+            return
+        }
         // A sideload-only local-cleanup model (isLocalCleanup && sourceUrl == null) has no host to
         // download from -- the BASE_URL fallback below would 404 and get retried three times before
         // failing (#H7). Fail fast and terminal instead. The Error carries no IOException cause, so
@@ -689,6 +711,79 @@ object ModelDownloader {
             // the archive is fully present but wrong, so resuming it wouldn't
             // help -- delete it and let the next attempt start clean.
             if (downloadComplete) tmpFile.delete()
+        }
+    }
+
+    private fun downloadParts(ctx: Context, model: Model, isCancelled: () -> Boolean, onState: (DownloadState) -> Unit) {
+        val baseUrl = model.sourceUrl ?: run {
+            onState(DownloadState.Error("No source URL for ${model.name}"))
+            return
+        }
+        val staging = stagingDir(ctx, model)
+        val finalDir = modelDir(ctx, model)
+        try {
+            require(model.parts.all { it.fileName == File(it.fileName).name && it.fileName != ".complete" }) {
+                "Invalid model file name"
+            }
+            staging.mkdirs()
+            val alreadyDownloaded = model.parts.sumOf { part ->
+                File(staging, part.fileName).takeIf { it.isFile }?.length() ?: 0L
+            }
+            val availableBytes = minOf(ctx.cacheDir.usableSpace, ctx.filesDir.usableSpace)
+            if (!hasEnoughSpace(availableBytes, model.sizeMb, alreadyDownloadedBytes = alreadyDownloaded)) {
+                throw NotEnoughSpaceException(
+                    requiredSpaceBytes(model.sizeMb, alreadyDownloadedBytes = alreadyDownloaded), availableBytes,
+                )
+            }
+            var completedWeight = 0
+            val totalWeight = model.parts.sumOf { it.sizeMb }
+            for (part in model.parts) {
+                if (isCancelled()) throw DownloadCancelledException()
+                val file = File(staging, part.fileName)
+                // A previous attempt may have completed this file before another part failed.
+                // Reuse only checksum-verified bytes; requesting Range from a complete file can
+                // otherwise produce HTTP 416 and needlessly download hundreds of MB again.
+                if (file.isFile && runCatching { verifyChecksum(file, part.sha256) }.isSuccess) {
+                    completedWeight += part.sizeMb
+                    onState(DownloadState.Downloading(completedWeight.toFloat() / totalWeight))
+                    continue
+                }
+                val resumedBytes = if (file.isFile) file.length() else 0L
+                val progress: (DownloadState) -> Unit = { state ->
+                    if (state is DownloadState.Downloading) {
+                        onState(DownloadState.Downloading(
+                            (completedWeight + part.sizeMb * state.progress) / totalWeight,
+                        ))
+                    } else onState(state)
+                }
+                downloadFile("$baseUrl/${part.fileName}", file, isCancelled, progress)
+                try {
+                    verifyChecksum(file, part.sha256)
+                } catch (e: ChecksumMismatchException) {
+                    if (!shouldCleanRetryAfterChecksumMismatch(resumedBytes)) {
+                        file.delete()
+                        throw e
+                    }
+                    file.delete()
+                    downloadFile("$baseUrl/${part.fileName}", file, isCancelled, progress)
+                    try { verifyChecksum(file, part.sha256) } catch (retryError: ChecksumMismatchException) {
+                        file.delete()
+                        throw retryError
+                    }
+                }
+                completedWeight += part.sizeMb
+            }
+            onState(DownloadState.Extracting)
+            finalDir.parentFile?.mkdirs()
+            installOverPrevious(finalDir) {
+                if (!staging.renameTo(finalDir)) {
+                    staging.copyRecursively(finalDir, overwrite = true)
+                    staging.deleteRecursively()
+                }
+            }
+            onState(DownloadState.Done)
+        } catch (e: Exception) {
+            onState(DownloadState.Error(e.message ?: "Unknown error", e))
         }
     }
 

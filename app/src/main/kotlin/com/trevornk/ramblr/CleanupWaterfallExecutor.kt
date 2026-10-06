@@ -656,12 +656,15 @@ object CleanupWaterfallExecutor {
                 return
             }
 
-            performStep(steps[index], text, prompt, localPrompt, localVocabulary, credentialLookup, entryCredentialLookup, transport, localInference, localModelPath, cancelHolder, deadlineAtMs, nowMs, temperatureCacheContext, isLastStep = index == steps.lastIndex) { outcome ->
+            val languageSafeLocalPrompt = if (localPrompt == PostProcessor.SIMPLE_PROMPT) {
+                localPrompt + TranscriptLanguageGuard.PROMPT_RULE
+            } else localPrompt // A fine-tuned local model may require its exact training prompt.
+            performStep(steps[index], text, prompt + TranscriptLanguageGuard.PROMPT_RULE, languageSafeLocalPrompt, localVocabulary, credentialLookup, entryCredentialLookup, transport, localInference, localModelPath, cancelHolder, deadlineAtMs, nowMs, temperatureCacheContext, isLastStep = index == steps.lastIndex) { outcome ->
                 logStepOutcome(steps[index], startedAtMs, outcome, benchmarkContext, benchmarkCorrelationId)
                 when (outcome) {
                     is CleanupStepOutcome.Success -> {
                         cursor.recordSuccess(index, nowMs())
-                        callback(PostProcessor.Result(outcome.text, null))
+                        callback(PostProcessor.Result(TranscriptLanguageGuard.preserve(text, outcome.text), null))
                     }
                     is CleanupStepOutcome.StepFailed -> attempt(index + 1, outcome.message)
                     is CleanupStepOutcome.ConnectionFailed -> attempt(nextGroupStart(index), outcome.message)
