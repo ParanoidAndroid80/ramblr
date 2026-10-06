@@ -1,0 +1,6 @@
+Dictation keeps your language, and finishes in the background.
+
+- New Dictation language setting (Settings → Transcription). Pick your language so cloud transcription stops coming back in English; Auto works as before.
+- Cleanup no longer translates your text into English unless your style asks for a translation.
+- Switching apps mid-transcription no longer loses your dictation. If the field you dictated into is gone, the text goes to the clipboard and History with a notification, and is never typed into the wrong app.
+- A notification tells you if a transcription fails after you've left the field.
