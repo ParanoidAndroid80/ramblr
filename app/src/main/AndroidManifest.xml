@@ -51,6 +51,22 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".AudioImportActivity"
+            android:exported="true"
+            android:configChanges="screenLayout|smallestScreenSize|screenSize|orientation|keyboardHidden|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+        </activity>
+
         <!-- Per-category Settings screens (#93 restructure): internal only, launched from
              MainActivity's category rows and never from outside the app.
 

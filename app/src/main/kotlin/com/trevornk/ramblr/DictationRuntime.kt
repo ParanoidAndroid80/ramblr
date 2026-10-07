@@ -353,6 +353,9 @@ class DictationRuntime internal constructor(
 
     // Local transcription engine (loaded lazily)
     private val transcriberSlot = TranscriberSlot<LocalTranscriber> { it.release() }
+    // The native recognizer has one decode stream at a time. File imports borrow this slot so
+    // an enabled accessibility service does not keep a second large GigaAM instance in RAM.
+    private val batchInferenceLock = Any()
     private val transcriberLifecycle = TranscriberLifecycle(transcriberSlot)
 
     // Streaming live-preview engine (#29) — only loaded when the opt-in setting is on and the
@@ -1171,6 +1174,27 @@ class DictationRuntime internal constructor(
         return transcriberSlot.get() != null
     }
 
+    /** Called on a worker thread by the audio-file import screen. */
+    internal fun transcribeImportedAudio(
+        pcmFile: File,
+        cancelled: () -> Boolean,
+        progress: (Int) -> Unit,
+    ): String {
+        require(currentState() == RecordingStateMachine.State.IDLE) { "Finish the current dictation first" }
+        check(awaitLocalTranscriber()) { "No local transcription model is installed" }
+        return synchronized(batchInferenceLock) {
+            val vad = ModelDownloader.vadModelFile(context, SILERO_VAD_MODEL)
+                ?.let { SherpaVadHandle.create(it) }
+            try {
+                transcriberSlot.use { transcriber ->
+                    ImportedAudioTranscription.transcribe(transcriber, pcmFile, vad, cancelled, progress)
+                } ?: error("Local transcription model became unavailable")
+            } finally {
+                vad?.close()
+            }
+        }
+    }
+
     /** #280: user-facing reason the local model can't run, instead of always blaming a download. */
     private fun localUnavailableMessage(): String = LocalModelUnavailability.message(
         installed = LocalTranscriber.availableModels(context).isNotEmpty(),
@@ -1265,14 +1289,16 @@ class DictationRuntime internal constructor(
                 val t0 = System.currentTimeMillis()
                 val durationSeconds = (file.length() / 2 / SAMPLE_RATE).toInt()
                 val text = try {
-                    transcriberSlot.use { transcriber ->
-                        if (vad != null) {
-                            transcriber.transcribeSegmented(file, vad, SAMPLE_RATE)
-                        } else {
-                            Log.i(TAG, "VAD model unavailable — decoding unsegmented (#132)")
-                            transcriber.transcribe(PcmFileBuffer.readAsFloatArray(file), SAMPLE_RATE)
-                        }
-                    } ?: throw IllegalStateException("Local model was unloaded during transcription")
+                    synchronized(batchInferenceLock) {
+                        transcriberSlot.use { transcriber ->
+                            if (vad != null) {
+                                transcriber.transcribeSegmented(file, vad, SAMPLE_RATE)
+                            } else {
+                                Log.i(TAG, "VAD model unavailable — decoding unsegmented (#132)")
+                                transcriber.transcribe(PcmFileBuffer.readAsFloatArray(file), SAMPLE_RATE)
+                            }
+                        } ?: throw IllegalStateException("Local model was unloaded during transcription")
+                    }
                 } finally {
                     vad?.close()
                 }

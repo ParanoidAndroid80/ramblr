@@ -1,6 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Ramblr</string>
+    <string name="import_audio_title">Расшифровать аудиофайл</string>
+    <string name="import_audio_main_subtitle">Выберите запись или отправьте аудио в Ramblr из другого приложения</string>
+    <string name="import_audio_description">Аудио остаётся на устройстве. Выбранная локальная модель распознаёт запись без корректировки и сохраняет текст в истории. Поддерживаются WAV, MP3, M4A, AAC, OGG и FLAC, если устройство умеет их декодировать. Ограничение: 2 часа или 512 МБ.</string>
+    <string name="import_audio_choose">Выбрать другой файл</string>
+    <string name="import_audio_cancel">Отменить расшифровку</string>
+    <string name="import_audio_cancelling">Отмена…</string>
+    <string name="import_audio_history">Открыть историю диктовок</string>
+    <string name="import_audio_copy">Скопировать текст</string>
+    <string name="import_audio_history_off">История диктовок выключена.</string>
+    <string name="import_audio_enable_history_title">Включить историю диктовок?</string>
+    <string name="import_audio_enable_history_message">Для сохранения расшифровки нужна история. После включения в неё также будут сохраняться будущие диктовки, пока вы не выключите её в разделе «Данные и журналы».</string>
+    <string name="import_audio_enable_history">Включить и расшифровать</string>
+    <string name="import_audio_preparing">Подготовка аудио…</string>
+    <string name="import_audio_decoding">Подготовка аудио: %1$d%%</string>
+    <string name="import_audio_transcribing">Распознавание: %1$d%%</string>
+    <string name="import_audio_saved">Расшифровка сохранена в истории</string>
+    <string name="import_audio_cancelled">Расшифровка отменена</string>
+    <string name="import_audio_failed">Не удалось расшифровать: %1$s</string>
+    <string name="import_audio_error_size">Размер файла превышает 512 МБ.</string>
+    <string name="import_audio_error_duration">Запись длиннее 2 часов.</string>
+    <string name="import_audio_error_model">Сначала установите и выберите локальную модель распознавания.</string>
+    <string name="import_audio_error_busy">Сначала завершите текущую диктовку.</string>
+    <string name="import_audio_error_speech">В записи не найдена речь.</string>
+    <string name="import_audio_error_generic">Проверьте формат и целостность аудиофайла.</string>
     <string name="accessibility_service_label_floating">Ramblr (плавающая кнопка)</string>
     <string name="accessibility_service_label_system">Ramblr (системное управление)</string>
     <string name="accessibility_description">Диктовка: записывает речь, распознаёт её и вставляет текст в выбранное поле. Android также может показывать собственную кнопку специальных возможностей для Ramblr. Это отдельный системный ярлык.</string>

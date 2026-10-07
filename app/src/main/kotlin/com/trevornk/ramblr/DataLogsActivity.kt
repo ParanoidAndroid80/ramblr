@@ -334,7 +334,9 @@ class DataLogsActivity : BaseSettingsActivity() {
     private fun historyRow(store: DictationHistoryStore, entry: DictationHistoryEntry, onDeleted: () -> Unit): View {
         val text = entry.cleanedText ?: entry.rawText
         val badge = paidFallbackBadgeOrNull(entry)
-        val row = settingsRow(historyTimestampFormat.format(java.util.Date(entry.timestamp)), text, badge) {
+        val title = historyTimestampFormat.format(java.util.Date(entry.timestamp)) +
+            (entry.sourceName?.let { " · $it" } ?: "")
+        val row = settingsRow(title, text, badge) {
             ClipboardUtil.copy(this, text)
             toast("Copied to clipboard")
         }

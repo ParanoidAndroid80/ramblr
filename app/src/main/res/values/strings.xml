@@ -1,6 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Ramblr</string>
+    <string name="import_audio_title">Transcribe audio file</string>
+    <string name="import_audio_main_subtitle">Choose a recording or share audio with Ramblr from another app</string>
+    <string name="import_audio_description">Audio stays on this device. The selected local model transcribes it without cleanup and saves the text in dictation history. Supported: WAV, MP3, M4A, AAC, OGG and FLAC when your device can decode them. Maximum: 2 hours or 512 MB.</string>
+    <string name="import_audio_choose">Choose another file</string>
+    <string name="import_audio_cancel">Cancel transcription</string>
+    <string name="import_audio_cancelling">Cancelling…</string>
+    <string name="import_audio_history">Open dictation history</string>
+    <string name="import_audio_copy">Copy transcript</string>
+    <string name="import_audio_history_off">Dictation history is turned off.</string>
+    <string name="import_audio_enable_history_title">Enable dictation history?</string>
+    <string name="import_audio_enable_history_message">Imported transcripts need history to be saved. This also saves future dictations until you turn it off in Data &amp; Logs.</string>
+    <string name="import_audio_enable_history">Enable and transcribe</string>
+    <string name="import_audio_preparing">Preparing audio…</string>
+    <string name="import_audio_decoding">Preparing audio: %1$d%%</string>
+    <string name="import_audio_transcribing">Transcribing: %1$d%%</string>
+    <string name="import_audio_saved">Transcript saved in history</string>
+    <string name="import_audio_cancelled">Transcription cancelled</string>
+    <string name="import_audio_failed">Could not transcribe: %1$s</string>
+    <string name="import_audio_error_size">The file exceeds 512 MB.</string>
+    <string name="import_audio_error_duration">The recording exceeds 2 hours.</string>
+    <string name="import_audio_error_model">Install and select a local transcription model first.</string>
+    <string name="import_audio_error_busy">Finish the current dictation first.</string>
+    <string name="import_audio_error_speech">No speech was found in the recording.</string>
+    <string name="import_audio_error_generic">Check that this audio format is supported and the file is not damaged.</string>
     <!-- #258: the two accessibility-service components MUST NOT share a label. Only one is ever
          PM-enabled, so system Settings shows one entry either way, but automation apps
          (MacroDroid/Tasker) address services by COMPONENT and let the user pick from a list of

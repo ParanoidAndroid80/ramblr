@@ -15,7 +15,8 @@ data class DictationHistoryEntry(
     val timestamp: Long,
     val rawText: String,
     val cleanedText: String?,
-    val paidFallbackGroup: CleanupStepGroup? = null
+    val paidFallbackGroup: CleanupStepGroup? = null,
+    val sourceName: String? = null,
 )
 
 /** Whether one history row's "paid fallback" badge (#33) should render: the debug/visibility
@@ -132,6 +133,7 @@ class DictationHistoryStore(private val file: File, private val maxEntries: Int 
             put("rawText", entry.rawText)
             put("cleanedText", entry.cleanedText ?: JSONObject.NULL)
             put("paidFallbackGroup", entry.paidFallbackGroup?.name ?: JSONObject.NULL)
+            put("sourceName", entry.sourceName ?: JSONObject.NULL)
         }.toString()
 
     private fun parse(line: String): DictationHistoryEntry {
@@ -144,7 +146,8 @@ class DictationHistoryStore(private val file: File, private val maxEntries: Int 
             // (Android's org.json), so a pre-#33 history line with no "paidFallbackGroup" key at
             // all parses to null here rather than throwing.
             paidFallbackGroup = if (json.isNull("paidFallbackGroup")) null
-                else runCatching { CleanupStepGroup.valueOf(json.getString("paidFallbackGroup")) }.getOrNull()
+                else runCatching { CleanupStepGroup.valueOf(json.getString("paidFallbackGroup")) }.getOrNull(),
+            sourceName = if (json.isNull("sourceName")) null else json.getString("sourceName"),
         )
     }
 }

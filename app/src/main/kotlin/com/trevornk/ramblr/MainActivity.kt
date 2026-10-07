@@ -179,6 +179,13 @@ class MainActivity : BaseSettingsActivity() {
         historyRowSub = historyRow.findViewWithTag("subtitle")
         root.addView(historyRow)
 
+        root.addView(settingsRow(
+            getString(R.string.import_audio_title),
+            getString(R.string.import_audio_main_subtitle),
+        ) {
+            startActivity(Intent(this, AudioImportActivity::class.java))
+        })
+
         root.addView(settingsRow("Advanced", AdvancedActivity.subtitle(this)) {
             startActivity(Intent(this, AdvancedActivity::class.java))
         })

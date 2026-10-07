@@ -152,6 +152,18 @@ class DictationHistoryStoreTest {
         val readBack = DictationHistoryStore(file).all().single()
         assertEquals("raw", readBack.rawText)
         assertNull(readBack.paidFallbackGroup)
+        assertNull(readBack.sourceName)
+    }
+
+    @Test fun `preserves imported recording name alongside transcript`() {
+        val file = tempFile()
+        DictationHistoryStore(file).add(
+            DictationHistoryEntry(123, "Текст совещания", null, sourceName = "Совещание.m4a")
+        )
+
+        val readBack = DictationHistoryStore(file).all().single()
+        assertEquals("Текст совещания", readBack.rawText)
+        assertEquals("Совещание.m4a", readBack.sourceName)
     }
 
     // --- upsert (#73) ---
