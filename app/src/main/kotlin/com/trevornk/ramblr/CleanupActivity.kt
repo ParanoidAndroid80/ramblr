@@ -261,7 +261,7 @@ class CleanupActivity : BaseSettingsActivity() {
             refresh()
         }
 
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Cleanup sends text off-device")
             .setMessage(
                 "Local transcription keeps audio on your phone, but cleanup sends the " +
@@ -397,7 +397,7 @@ class CleanupActivity : BaseSettingsActivity() {
         } else {
             " Cleanup will turn off (no cloud provider is configured)."
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Delete ${model.name}?")
             .setMessage("This frees ${model.sizeMb} MB of storage.$activeNote You can download it again later.")
             .setPositiveButton("Delete") { _, _ -> deleteCleanupModel(model) }

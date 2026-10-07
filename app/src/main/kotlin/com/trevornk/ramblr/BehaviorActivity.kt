@@ -418,7 +418,7 @@ class BehaviorActivity : BaseSettingsActivity() {
         val diagnosticCommand = automationDiagnosticCommand(packageName, hostingUserId)
         val enableComponent = InvocationSecureSettings.serviceComponent(this)
         val enableCommand = automationOffHookEnableCommand(enableComponent, hostingUserId)
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Automation off-hook enabled")
             .setMessage(
                 "Ramblr now responds to this broadcast by turning its accessibility service " +
@@ -474,7 +474,7 @@ class BehaviorActivity : BaseSettingsActivity() {
             "Status command",
             "Re-enable command (privileged shell only)",
         )
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Copy which command?")
             .setItems(choices) { _, which ->
                 when (which) {
@@ -497,7 +497,7 @@ class BehaviorActivity : BaseSettingsActivity() {
      *  so the term lands exactly like a manually typed one; both paths drop the candidate's
      *  counters ([VocabularySuggestionStore.dismiss] / [VocabularySuggestionStore.removeCandidate]). */
     private fun promptSuggestion(suggestion: VocabularySuggestionStore.Suggestion) {
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Add \u201C${suggestion.term}\u201D to vocabulary?")
             .setMessage(
                 suggestion.evidenceLine() + ".\n\nAdding it helps transcription and cleanup " +
@@ -521,7 +521,7 @@ class BehaviorActivity : BaseSettingsActivity() {
     private fun promptDismissedSuggestions() {
         val dismissed = VocabularySuggestionStore.dismissedTerms(this)
         if (dismissed.isEmpty()) return
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Dismissed suggestions")
             .setItems(dismissed.map { "$it \u2014 tap to restore" }.toTypedArray()) { _, which ->
                 val term = dismissed[which]
@@ -562,7 +562,7 @@ class BehaviorActivity : BaseSettingsActivity() {
             setText(AutoPeekDelay.secondsOrDefault(this@BehaviorActivity).toString())
             setSelection(text.length)
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Auto-hide delay")
             .setMessage("Seconds of inactivity before the icon slides to the edge (${AutoPeekDelay.MIN_SECONDS}-${AutoPeekDelay.MAX_SECONDS}).")
             .setView(input.apply { setPadding(dp(24), dp(8), dp(24), dp(8)) })
@@ -586,7 +586,7 @@ class BehaviorActivity : BaseSettingsActivity() {
             setText(PeekVisibleSize.dpOrDefault(this@BehaviorActivity).toString())
             setSelection(text.length)
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Peeked sliver size")
             .setMessage("How many dp of the icon stay visible and tappable at the edge once peeked (${PeekVisibleSize.MIN_DP}-${PeekVisibleSize.MAX_DP}). Bigger is easier to tap but shows more of the icon.")
             .setView(input.apply { setPadding(dp(24), dp(8), dp(24), dp(8)) })
@@ -707,7 +707,7 @@ class BehaviorActivity : BaseSettingsActivity() {
         val current = SilenceAutoStopThreshold.decisecondsOrDefault(this)
         val checkedIndex = presets.indexOf(current).let { if (it < 0) presets.size else it }
         val items = labels + "Custom…"
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Silence threshold")
             .setSingleChoiceItems(items, checkedIndex) { dialog, which ->
                 if (which < presets.size) {
@@ -731,7 +731,7 @@ class BehaviorActivity : BaseSettingsActivity() {
         }
         val minLabel = SilenceAutoStopThreshold.formatSeconds(SilenceAutoStopThreshold.MIN_DECISECONDS)
         val maxLabel = SilenceAutoStopThreshold.formatSeconds(SilenceAutoStopThreshold.MAX_DECISECONDS)
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Custom silence threshold")
             .setMessage("Seconds of silence before auto-stop ($minLabel-$maxLabel).")
             .setView(input.apply { setPadding(dp(24), dp(8), dp(24), dp(8)) })
@@ -787,7 +787,7 @@ class BehaviorActivity : BaseSettingsActivity() {
                 setPadding(0, dp(8), 0, 0)
             })
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setCustomTitle(titleView)
             .setSingleChoiceItems(labels, checkedIndex) { dialog, which ->
                 LocalTranscriptionThreads.setThreads(this, presets[which])
@@ -840,7 +840,7 @@ class BehaviorActivity : BaseSettingsActivity() {
                 setPadding(0, dp(8), 0, 0)
             })
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setCustomTitle(titleView)
             .setSingleChoiceItems(labels, checkedIndex) { dialog, which ->
                 CanaryLanguage.setLanguage(this, languages[which])

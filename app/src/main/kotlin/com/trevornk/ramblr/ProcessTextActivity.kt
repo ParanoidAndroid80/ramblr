@@ -122,7 +122,7 @@ class ProcessTextActivity : Activity() {
         )
         val checked = personas.indexOfFirst { it.key == current.key }.takeIf { it >= 0 } ?: 0
 
-        pickerDialog = android.app.AlertDialog.Builder(this)
+        pickerDialog = RussianAlertDialogBuilder(this)
             .setTitle("Clean up with")
             .setSingleChoiceItems(personas.map { it.title }.toTypedArray(), checked) { dialog, which ->
                 dialog.dismiss()
@@ -153,7 +153,7 @@ class ProcessTextActivity : Activity() {
         val localPrompt = LocalCleanupProvider.selectedSystemPrompt(this)
         val localModelPath = ModelDownloader.localCleanupModelFile(this, localModel)?.absolutePath
 
-        progressDialog = android.app.AlertDialog.Builder(this)
+        progressDialog = RussianAlertDialogBuilder(this)
             .setTitle("Cleaning up…")
             .setMessage("Ramblr is cleaning up ${request.text.length} characters.")
             .setNegativeButton("Cancel") { _, _ -> cancelAndFinish() }

@@ -192,7 +192,7 @@ class DataLogsActivity : BaseSettingsActivity() {
     }
 
     private fun confirmRestore(uri: Uri) {
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Restore from backup?")
             .setMessage(
                 "This overwrites the dictation history, benchmark log, and " +
@@ -243,7 +243,7 @@ class DataLogsActivity : BaseSettingsActivity() {
             refresh()
             return
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Turn off quality logging")
             .setMessage("New dictations won't be added to the quality log. Delete the transcript text already saved in it?")
             .setPositiveButton("Delete log") { _, _ ->
@@ -267,7 +267,7 @@ class DataLogsActivity : BaseSettingsActivity() {
             refresh()
             return
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Turn off dictation history")
             .setMessage("New dictations won't be saved. Clear the transcripts already saved on this device?")
             .setPositiveButton("Clear history") { _, _ ->
@@ -304,7 +304,7 @@ class DataLogsActivity : BaseSettingsActivity() {
             entries.forEach { list.addView(historyRow(store, it, onChanged)) }
         }
 
-        val builder = android.app.AlertDialog.Builder(this)
+        val builder = RussianAlertDialogBuilder(this)
             .setTitle("Dictation history")
             .setView(ScrollView(this).apply { addView(list) })
             .setNegativeButton("Close") { _, _ -> if (finishOnHistoryClose) finish() }
@@ -316,7 +316,7 @@ class DataLogsActivity : BaseSettingsActivity() {
     }
 
     private fun confirmClearAllHistory(store: DictationHistoryStore, onCleared: () -> Unit) {
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Clear all history?")
             .setMessage("Removes every saved transcript from this device. This can't be undone.")
             .setPositiveButton("Clear") { _, _ ->
@@ -343,6 +343,8 @@ class DataLogsActivity : BaseSettingsActivity() {
             true
         }
         val subtitle = row.findViewWithTag<TextView>("subtitle")
+        // Dictation text is user content, even if it happens to match an English UI label.
+        subtitle.tag = "user_content"
         subtitle.maxLines = 2
         subtitle.ellipsize = android.text.TextUtils.TruncateAt.END
         return row
@@ -364,7 +366,7 @@ class DataLogsActivity : BaseSettingsActivity() {
     }
 
     private fun confirmDeleteHistoryEntry(store: DictationHistoryStore, entry: DictationHistoryEntry, onDeleted: () -> Unit) {
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Delete this transcript?")
             .setPositiveButton("Delete") { _, _ ->
                 store.delete(entry.timestamp)

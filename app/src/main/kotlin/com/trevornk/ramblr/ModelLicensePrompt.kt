@@ -49,7 +49,7 @@ fun Activity.downloadModelWithLicenseConsent(
     // and a failed enqueue all funnel into the same single onDeclined -- and so acceptance never
     // double-reports through the dismiss listener that follows it.
     var started = false
-    AlertDialog.Builder(this)
+    RussianAlertDialogBuilder(this)
         .setTitle("${model.name} uses a non-free license")
         .setMessage(ModelLicenseConsent.consentMessage(model))
         .setPositiveButton("Accept and download") { _, _ ->

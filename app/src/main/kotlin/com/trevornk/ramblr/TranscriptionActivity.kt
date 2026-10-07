@@ -206,7 +206,7 @@ class TranscriptionActivity : BaseSettingsActivity() {
                 setPadding(0, dp(8), 0, 0)
             })
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setCustomTitle(titleView)
             .setSingleChoiceItems(labels, checkedIndex) { dialog, which ->
                 DictationLanguage.setLanguage(this, codes[which])
@@ -278,7 +278,7 @@ class TranscriptionActivity : BaseSettingsActivity() {
             refresh() // no pref written, so the switch snaps back to its persisted state
         }
 
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Cleanup sends text off-device")
             .setMessage(
                 "Local transcription keeps audio on your phone, but cleanup sends the " +
@@ -425,7 +425,7 @@ class TranscriptionActivity : BaseSettingsActivity() {
     private fun confirmDeleteModel(model: Model) {
         val isActive = prefs().getString("model_name", "") == model.archive
         val activeNote = if (isActive) " This is your currently selected model." else ""
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Delete ${model.name}?")
             .setMessage("This frees ${model.sizeMb} MB of storage.$activeNote You can download it again later.")
             .setPositiveButton("Delete") { _, _ -> deleteModel(model) }

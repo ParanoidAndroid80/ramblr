@@ -68,7 +68,9 @@ object VocabularyEditor {
      *  screen, term list on Behavior), which is why the dialog doesn't refresh anything itself. */
     fun prompt(activity: Activity, onSaved: () -> Unit) {
         val input = EditText(activity).apply {
-            hint = "One term per line, e.g. FastHTML"
+            hint = if (activity.resources.configuration.locales[0].language == "ru")
+                RussianUi.translate("One term per line, e.g. FastHTML")
+            else "One term per line, e.g. FastHTML"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             minLines = 3
             gravity = Gravity.TOP or Gravity.START
@@ -86,7 +88,7 @@ object VocabularyEditor {
             )
             localOnlyNote(activity)?.let { append("\n\n").append(it) }
         }
-        android.app.AlertDialog.Builder(activity)
+        RussianAlertDialogBuilder(activity)
             .setTitle("Personal vocabulary")
             .setMessage(message)
             .setView(input.apply { setPadding(dp(activity, 24), dp(activity, 8), dp(activity, 24), dp(activity, 8)) })

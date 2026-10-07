@@ -199,7 +199,7 @@ abstract class BaseSettingsActivity : AppCompatActivity() {
      *  by every screen with a credential field: TranscriptionActivity/CleanupActivity's OpenAI
      *  key row (#93) and AdvancedActivity's three waterfall credential rows. */
     protected fun confirmRemoveSecret(label: String, onConfirm: () -> Unit) {
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Remove $label?")
             .setMessage("The saved $label will be deleted from this device.")
             .setPositiveButton("Remove") { _, _ -> onConfirm() }

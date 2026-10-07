@@ -174,7 +174,7 @@ class OverlayAppearanceActivity : BaseSettingsActivity() {
     private fun promptOverlaySize() {
         val current = OverlayAppearancePrefs.load(this).ringSizeDp
         val checked = overlaySizePresets.indexOfFirst { it.second == current }.let { if (it < 0) 1 else it }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Icon size")
             .setSingleChoiceItems(overlaySizePresets.map { it.first }.toTypedArray(), checked) { dialog, which ->
                 OverlayAppearancePrefs.setRingSizeDp(this, overlaySizePresets[which].second)
@@ -201,7 +201,7 @@ class OverlayAppearanceActivity : BaseSettingsActivity() {
             )
         }
         val items = swatchItems + customItem
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle(title)
             .setItems(items.toTypedArray()) { _, which ->
                 if (which < overlayColorSwatches.size) onPick(overlayColorSwatches[which].second)
@@ -322,7 +322,7 @@ class OverlayAppearanceActivity : BaseSettingsActivity() {
             addView(hexInput)
         }
 
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle(title)
             .setView(ScrollView(this).apply { addView(container) })
             .setPositiveButton("Use this color") { _, _ -> onPick(currentColor()) }

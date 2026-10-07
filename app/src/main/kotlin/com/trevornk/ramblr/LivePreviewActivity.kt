@@ -169,7 +169,7 @@ class LivePreviewActivity : BaseSettingsActivity() {
     private fun confirmDeleteStreamingModel(model: Model) {
         val isActive = selectedStreamingModel().archive == model.archive
         val activeNote = if (isActive) " This turns off streaming live preview until you pick another downloaded model." else ""
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Delete ${model.name}?")
             .setMessage("This frees ${model.sizeMb} MB of storage.$activeNote You can download it again later.")
             .setPositiveButton("Delete") { _, _ -> deleteStreamingModel(model) }

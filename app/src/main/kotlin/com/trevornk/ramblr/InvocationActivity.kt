@@ -294,7 +294,7 @@ class InvocationActivity : BaseSettingsActivity() {
                 "Open keyboard settings",
             )
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle(title)
             .setMessage(message)
             .setPositiveButton(positive) { _, _ ->
@@ -353,7 +353,7 @@ class InvocationActivity : BaseSettingsActivity() {
                             "Ramblr entry \u2014 just turn it on).")
                 )
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle(title)
             .setMessage(message)
             .setPositiveButton("Switch") { _, _ -> performModeSwitch(target) }
@@ -415,7 +415,7 @@ class InvocationActivity : BaseSettingsActivity() {
      * component isn't subject to the trap, but its rows never lead here.)
      */
     private fun showOsShortcutExplainerThenDeepLink(methodName: String, howTo: String) {
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Before you go: how this switch behaves")
             .setMessage(
                 "The $methodName is managed on Ramblr's system Accessibility page.\n\n$howTo\n\n" +
@@ -461,7 +461,7 @@ class InvocationActivity : BaseSettingsActivity() {
                 return
             }
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Add the Ramblr tile")
             .setMessage(
                 "Swipe down twice to open Quick Settings, tap the edit (pencil) button, then " +
@@ -497,7 +497,7 @@ class InvocationActivity : BaseSettingsActivity() {
             volumeKeysBound = InvocationSecureSettings.isVolumeKeysBound(this),
             canWrite = InvocationSecureSettings.canWrite(this),
         )
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Turn Ramblr off?")
             .setMessage(serviceOffConfirmMessage(risk))
             .setPositiveButton("Turn off") { _, _ -> performServiceOff(action, risk) }
@@ -558,7 +558,7 @@ class InvocationActivity : BaseSettingsActivity() {
             textSize = 14f
             setPadding(dp(24), dp(16), dp(24), 0)
         }
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Direct shortcut control")
             .setView(message)
             .setPositiveButton("OK") { _, _ -> refresh() }

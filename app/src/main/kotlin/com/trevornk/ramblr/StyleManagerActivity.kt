@@ -184,7 +184,7 @@ class StyleManagerActivity : BaseSettingsActivity() {
         container.addView(nameInput)
         container.addView(promptInput)
 
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = RussianAlertDialogBuilder(this)
             .setTitle(title)
             .setView(container)
             .setPositiveButton("Save", null) // real handler wired below so a blank name/prompt doesn't dismiss (#125)
@@ -205,10 +205,11 @@ class StyleManagerActivity : BaseSettingsActivity() {
             }
         }
         dialog.show()
+        RussianAlertDialogBuilder.localizeDialog(this, dialog)
     }
 
     private fun confirmDeletePersona(persona: CleanupPersona) {
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Delete \"${persona.title}\"?")
             .setMessage("This can't be undone. Any app that was set to use this style falls back to your global style.")
             .setPositiveButton("Delete") { _, _ ->

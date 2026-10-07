@@ -636,7 +636,7 @@ class MainActivity : BaseSettingsActivity() {
     }
 
     private fun showOnboardingIntro() {
-        onboardingDialog = android.app.AlertDialog.Builder(this)
+        onboardingDialog = RussianAlertDialogBuilder(this)
             .setTitle("Welcome to Ramblr")
             .setMessage(
                 "Choose how you want to dictate:\n\n" +
@@ -674,7 +674,7 @@ class MainActivity : BaseSettingsActivity() {
             showOnboardingMicPermanentlyDeniedStep()
             return
         }
-        onboardingDialog = android.app.AlertDialog.Builder(this)
+        onboardingDialog = RussianAlertDialogBuilder(this)
             .setTitle("Step 1 of 5: Microphone access")
             .setMessage("Ramblr needs the microphone to record what you say before transcribing it.")
             .setCancelable(false)
@@ -691,7 +691,7 @@ class MainActivity : BaseSettingsActivity() {
      *  forward is App info -> Permissions -> Microphone -> Allow. Routes there instead of firing a
      *  request that Android silently drops. */
     private fun showOnboardingMicPermanentlyDeniedStep() {
-        onboardingDialog = android.app.AlertDialog.Builder(this)
+        onboardingDialog = RussianAlertDialogBuilder(this)
             .setTitle("Step 1 of 5: Microphone access")
             .setMessage(
                 "Microphone access is turned off for Ramblr, and Android won't ask again from " +
@@ -740,7 +740,7 @@ class MainActivity : BaseSettingsActivity() {
                 "keyboard and doesn't run background automation.\n\n" +
                 "On the next screen, look for \"Ramblr\" in the list and turn it on."
         }
-        onboardingDialog = android.app.AlertDialog.Builder(this)
+        onboardingDialog = RussianAlertDialogBuilder(this)
             .setTitle("Step 2 of 5: Turn on Accessibility")
             .setMessage(message)
             .setCancelable(false)
@@ -762,7 +762,7 @@ class MainActivity : BaseSettingsActivity() {
     }
 
     private fun showOnboardingVoiceKeyboardStep() {
-        onboardingDialog = android.app.AlertDialog.Builder(this)
+        onboardingDialog = RussianAlertDialogBuilder(this)
             .setTitle("Step 2 of 5: Enable Ramblr Voice")
             .setMessage(
                 "Android controls which keyboards are enabled. On the next screen, enable " +
@@ -806,7 +806,7 @@ class MainActivity : BaseSettingsActivity() {
     private fun showOnboardingModeStep() {
         markOnboardingStep(STEP_MODE)
         val recommended = MODEL_CATALOG.firstOrNull { it.recommended } ?: MODEL_CATALOG.first()
-        onboardingDialog = android.app.AlertDialog.Builder(this)
+        onboardingDialog = RussianAlertDialogBuilder(this)
             .setTitle("Step 3 of 5: Choose transcription mode")
             .setMessage(
                 "On-device (recommended): downloads \"${recommended.name}\" and keeps your audio on " +
@@ -859,7 +859,7 @@ class MainActivity : BaseSettingsActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             hint = "Paste key"
         }
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = RussianAlertDialogBuilder(this)
             .setTitle("$label API Key")
             .setMessage("Used only to call $label's API directly from your phone — billed pay-per-use to your own account.")
             .setView(input.apply { setPadding(dp(24), dp(8), dp(24), dp(8)) })
@@ -886,6 +886,7 @@ class MainActivity : BaseSettingsActivity() {
         }
         onboardingDialog = dialog
         dialog.show()
+        RussianAlertDialogBuilder.localizeDialog(this, dialog)
     }
 
     /**
@@ -903,7 +904,7 @@ class MainActivity : BaseSettingsActivity() {
     private fun showOnboardingCleanupStep() {
         markOnboardingStep(STEP_CLEANUP)
         val recommendedLocal = LOCAL_CLEANUP_MODEL_CATALOG.firstOrNull { it.recommended } ?: LOCAL_CLEANUP_MODEL_CATALOG.first()
-        onboardingDialog = android.app.AlertDialog.Builder(this)
+        onboardingDialog = RussianAlertDialogBuilder(this)
             .setTitle("Step 4 of 5: Clean up dictation with AI? (optional)")
             .setMessage(
                 "Cleanup rewrites your raw dictation to fix grammar, punctuation, and filler words — " +
@@ -941,7 +942,7 @@ class MainActivity : BaseSettingsActivity() {
      *  no latency claim is made either way. Both are legitimate, inexpensive choices; picking
      *  whichever account the user already has (or wants to try) is a perfectly good reason. */
     private fun showOnboardingCloudProviderChoiceStep() {
-        onboardingDialog = android.app.AlertDialog.Builder(this)
+        onboardingDialog = RussianAlertDialogBuilder(this)
             .setTitle("Step 4b of 5: Choose a cloud cleanup provider")
             .setMessage(
                 "Gemini and OpenAI are both good, inexpensive choices for cleanup. Pick whichever " +
@@ -1061,7 +1062,7 @@ class MainActivity : BaseSettingsActivity() {
     private fun showOnboardingStreamingStep() {
         markOnboardingStep(STEP_STREAMING)
         val recommended = STREAMING_MODEL_CATALOG.firstOrNull { it.recommended } ?: STREAMING_MODEL_CATALOG.first()
-        onboardingDialog = android.app.AlertDialog.Builder(this)
+        onboardingDialog = RussianAlertDialogBuilder(this)
             .setTitle("Step 5 of 5: Show live text while you speak? (optional)")
             .setMessage(
                 "Streaming preview shows your words appearing in the field as you talk, using a small " +
@@ -1148,7 +1149,7 @@ class MainActivity : BaseSettingsActivity() {
         if (setupMode == OnboardingSetupMode.FLOATING_BUTTON) {
             WhisperAccessibilityService.setOverlayForceVisibleOverride(true)
         }
-        onboardingDialog = android.app.AlertDialog.Builder(this)
+        onboardingDialog = RussianAlertDialogBuilder(this)
             .setTitle("Try it out (optional)")
             .setMessage(message)
             .setView(testField)

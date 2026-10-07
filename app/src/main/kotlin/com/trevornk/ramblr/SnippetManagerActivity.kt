@@ -193,7 +193,7 @@ class SnippetManagerActivity : BaseSettingsActivity() {
         container.addView(expansionInput)
         container.addView(errorLabel)
 
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = RussianAlertDialogBuilder(this)
             .setTitle(title)
             .setView(container)
             .setPositiveButton("Save", null) // real handler wired below, mirrors StyleManagerActivity (#125)
@@ -217,10 +217,11 @@ class SnippetManagerActivity : BaseSettingsActivity() {
             }
         }
         dialog.show()
+        RussianAlertDialogBuilder.localizeDialog(this, dialog)
     }
 
     private fun confirmDeleteSnippet(entry: SnippetEntry) {
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Delete \u201C${entry.trigger}\u201D?")
             .setMessage("This can't be undone.")
             .setPositiveButton("Delete") { _, _ ->

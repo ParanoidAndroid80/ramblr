@@ -74,7 +74,7 @@ class SetupActivity : BaseSettingsActivity() {
     /** Routes a permanently-denied mic permission to App info (#H6), since the system permission
      *  prompt will never appear again from an in-app request. */
     private fun showMicPermanentlyDeniedDialog() {
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Microphone access needed")
             .setMessage(
                 "Microphone access is turned off for Ramblr, and Android won't ask again from " +
@@ -117,7 +117,7 @@ class SetupActivity : BaseSettingsActivity() {
      */
     private fun onAccessibilityRowTapped() {
         if (RestrictedSettingsCheck.isBlocked(this)) {
-            android.app.AlertDialog.Builder(this)
+            RussianAlertDialogBuilder(this)
                 .setTitle("One extra step needed")
                 .setMessage(
                     "Because Ramblr was installed outside the Play Store, Android blocks its " +

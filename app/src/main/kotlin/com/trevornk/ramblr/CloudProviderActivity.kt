@@ -406,7 +406,7 @@ class CloudProviderActivity : BaseSettingsActivity() {
         }
 
     private fun confirmRemoveEntry(entry: ProviderChainEntry, index: Int) {
-        android.app.AlertDialog.Builder(this)
+        RussianAlertDialogBuilder(this)
             .setTitle("Remove ${entryLabel(entry)}?")
             .setMessage("This removes it from the provider chain and clears its saved key.")
             .setPositiveButton("Remove") { _, _ ->
@@ -755,7 +755,7 @@ class CloudProviderActivity : BaseSettingsActivity() {
         }
         container.addView(keyInput)
 
-        val builder = android.app.AlertDialog.Builder(this)
+        val builder = RussianAlertDialogBuilder(this)
             .setTitle(if (existing == null) "Add provider" else "Edit ${entryLabel(existing)}")
             .setView(ScrollView(this).apply { addView(container) })
             .setPositiveButton("Save", null) // real handler wired below so a validation failure doesn't dismiss (#125)
